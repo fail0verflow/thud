@@ -13,6 +13,7 @@ CONNECTING_UPSTREAM = 2
 FORWARDING          = 3
 class IRCProxy(LineReceiver):
     state = STATE_NONE
+    upstream_queue = []
     def connectionMade(self):
         print "CLIENT CONNECTED"
         self.state = WAITING_FOR_PASS
@@ -27,9 +28,15 @@ class IRCProxy(LineReceiver):
             print "REQUESTING UPSTREAM: %s" % uri
             self.state = CONNECTING_UPSTREAM
             self.factory.attach_upstream(uri,self)
+        if self.state == CONNECTING_UPSTREAM:
+            self.upstream_queue.append(line)
     def upstream_attached(self, upstream):
+        print "UPSTREAM_ATTACHED"
         self.upstream = upstream
         self.state = FORWARDING
+        for line in self.upstream_queue:
+            self.upstream.sendLine(line)
+        self.upstream_queue = []
             
 
 class IRCProxyFactory(Factory):
