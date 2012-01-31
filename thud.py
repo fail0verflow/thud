@@ -19,22 +19,27 @@ class IRCProxy(LineReceiver):
         self.state = WAITING_FOR_PASS
     def lineReceived(self,line):
         if self.state == FORWARDING:
+            if len(self.upstream.clients) > 1 and line.startswith("USER"):
+                print "NOT RESENDING %s" % line
+                return
             print "FORWARDING FROM CLIENT: %s" % line
             self.upstream.sendLine(line)
-            return 
-        print "RECEIVED FROM CLIENT: %s" % line
-        if self.state == WAITING_FOR_PASS and line.startswith("PASS"):
+        elif self.state == WAITING_FOR_PASS and line.startswith("PASS"):
             uri = line[5:]
             print "REQUESTING UPSTREAM: %s" % uri
             self.state = CONNECTING_UPSTREAM
             self.factory.attach_upstream(uri,self)
-        if self.state == CONNECTING_UPSTREAM:
+        elif self.state == CONNECTING_UPSTREAM:
+            print "RECEIVED FROM CLIENT KEEPING TILL AFTER CONNECT: %s" % line
             self.upstream_queue.append(line)
     def upstream_attached(self, upstream):
         print "UPSTREAM_ATTACHED"
         self.upstream = upstream
         self.state = FORWARDING
+        if len(self.upstream.clients) > 1:
+            self.upstream_queue = []
         for line in self.upstream_queue:
+            print "PLAYING OUT: %s" % line
             self.upstream.sendLine(line)
         self.upstream_queue = []
             
@@ -63,6 +68,7 @@ class IRCProxyFactory(Factory):
             upstream.register_client(client,args)
             client.upstream_attached(upstream)
         if uri in self.upstream_connections:
+            print "ALREADY HAVE THIS UPSTREAM"
             __upstream_connected(self.upstream_connections[uri])
         else:
             d = self.connect_upstream(uri,client,args)
@@ -89,6 +95,7 @@ class IRCUpstreamConnection(LineReceiver):
     def __init__(self,uri):
         self.uri = uri
         self.clients = {}
+        self.queue = []
     def register_client(self, client, args):
         if "resource" in args:
             resource = args[resource]
@@ -97,6 +104,9 @@ class IRCUpstreamConnection(LineReceiver):
             resource = uuid.uuid4().hex
         self.clients[resource] = client
         client.resource = resource
+        for line in self.queue:
+            print "REPLAYING TO CLIENT: %s" % line
+            client.sendLine(line)
 
     def unregister_client(self, client):
         if client.resource in self.clients:
@@ -104,6 +114,9 @@ class IRCUpstreamConnection(LineReceiver):
 
     def lineReceived(self,line):
         print "FORWARDING TO CLIENTS: %s" % line
+        code = line.split(" ")[1]
+        if code in ["000","001","002","003","004","005","353","366","324","329","352","315","JOIN"]:
+            self.queue.append(line)
         for client in self.clients.values():
             client.sendLine(line)
         
