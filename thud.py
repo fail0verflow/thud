@@ -1,8 +1,10 @@
-#!/usr/bin/env python
+#!/usr/bin/env python2.7
 from twisted.internet.protocol import Factory, ClientFactory
 from twisted.protocols.basic import LineReceiver
 from twisted.internet import reactor
 from twisted.internet.endpoints import clientFromString
+import uuid
+import re
 
 
 STATE_NONE          = 0
@@ -12,23 +14,22 @@ FORWARDING          = 3
 class IRCProxy(LineReceiver):
     state = STATE_NONE
     def connectionMade(self):
-        print "CONNECTED!!!"
+        print "CLIENT CONNECTED"
         self.state = WAITING_FOR_PASS
     def lineReceived(self,line):
         if self.state == FORWARDING:
-            print "FORWARDING: %s" % line
-            self.sendLine(self.upstream.sendreceive(line))
+            print "FORWARDING FROM CLIENT: %s" % line
+            self.upstream.sendLine(line)
             return 
-        print "RECEIVED: %s" % line
+        print "RECEIVED FROM CLIENT: %s" % line
         if self.state == WAITING_FOR_PASS and line.startswith("PASS"):
-            upstream = line[5:]
-            print "REQUESTING UPSTREAM: %s" % upstream
+            uri = line[5:]
+            print "REQUESTING UPSTREAM: %s" % uri
             self.state = CONNECTING_UPSTREAM
-            if upstream in self.factory.upstream_connections:
-                self.upstream = self.factory.upstream_connections[upstream]
-            else:
-                self.upstream = self.factory.connect_upstream(upstream)
-            self.state = FORWARDING
+            self.factory.attach_upstream(uri,self)
+    def upstream_attached(self, upstream):
+        self.upstream = upstream
+        self.state = FORWARDING
             
 
 class IRCProxyFactory(Factory):
@@ -40,32 +41,40 @@ class IRCProxyFactory(Factory):
         if "?" in uri:
             uri, qs = uri.split("?")
         args = {}
-        for kv in qs.split("&"):
-            key,value = kv.split("=")
-            args[key] = value
+        if qs:
+            for kv in qs.split("&"):
+                key,value = kv.split("=")
+                args[key] = value
         return uri, args
     def attach_upstream(self, uri, client):
         print "REQUESTED attach to upstream %s" % uri
         uri, args = self.parse_uri(uri)
-        if uri in self.upstream_connections:
-            upstream = self.upstream_connections[uri]
-        else:
-            upstream = self.connect_upstream(uri,args)
+
+        def __upstream_connected(upstream):
+            print "UPSTREAM_CONNECTED!"
             self.upstream_connections[uri] = upstream
+            upstream.register_client(client,args)
+            client.upstream_attached(upstream)
+        if uri in self.upstream_connections:
+            __upstream_connected(self.upstream_connections[uri])
+        else:
+            d = self.connect_upstream(uri,client,args)
+            d.addCallback(__upstream_connected)
 
     def connect_upstream(self, uri, client, args):
-        m = re.match("((?P<proto>[a-zA-i0-9]+)://)?(?P<host>[a-zA-Z0-9.-]+)(:?P<port>[0-9]+)?/?",uri)
-        protocol = m.group("proto").lower()
+        m = re.match("(?:(?P<proto>[a-zA-i0-9]+)://)?(?P<host>[a-zA-Z0-9.-]+)(:?P<port>[0-9]+)?/?",uri)
+        parts = m.groupdict()
+        protocol = parts.get("proto","ircs").lower()
+        host = parts.get("host")
+        port = parts.get("port","6667")
+
         if protocol == "irc":
             epproto = "tcp"
         elif protocol == "ircs":
             epproto = "ssl"
-        endpointstring = "%s:host=%s:port=%s" % (epproto,m.group("host"),m.group("port"))
+        endpointstring = "%s:host=%s:port=%s" % (epproto,host,port)
         endpoint = clientFromString(reactor,endpointstring)
-        d = endpoint.connect(IRCUpstreamConnectionFactory(uri))
-        def __upstream_connected(p):
-            p.register_client(client,args)
-        d.addCallback(__upstream_connected)
+        return endpoint.connect(IRCUpstreamConnectionFactory(uri))
 
 
 
@@ -77,13 +86,20 @@ class IRCUpstreamConnection(LineReceiver):
         if "resource" in args:
             resource = args[resource]
         else:
-            resource = random()
+            # use a random resource identifier
+            resource = uuid.uuid4().hex
         self.clients[resource] = client
+        client.resource = resource
 
-    def sendreceive(self, line):
-        print "%s wants to FORWARD: %s" % (self.uri,line)
-        return ""
+    def unregister_client(self, client):
+        if client.resource in self.clients:
+            del self.clients[client.resource]
 
+    def lineReceived(self,line):
+        print "FORWARDING TO CLIENTS: %s" % line
+        for client in self.clients.values():
+            client.sendLine(line)
+        
 class IRCUpstreamConnectionFactory(Factory):
     def __init__(self, uri):
         self.uri = uri
@@ -91,5 +107,5 @@ class IRCUpstreamConnectionFactory(Factory):
         return IRCUpstreamConnection(self.uri)
 
 reactor.listenTCP(1234,IRCProxyFactory())
-reactor.connectTCP("localhost",1234,IRCUpstreamConnectionFactory())
+#reactor.connectTCP("localhost",1234,IRCUpstreamConnectionFactory())
 reactor.run()
