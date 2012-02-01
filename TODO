@@ -1,0 +1,21 @@
+01: Configuration file
+Upstream connection configurations should be persisted to a config file. Some client information (e.g. resource specific backlog-limits) should be persisted to the file too.
+The file must be machine and human updateable.
+
+02: Authentication
+Implement some form of authentication for clients.
+
+03: Cross-resource message delivery
+Ensure that messages sent by one client-resource on a given upstream connection are 'echoed' to other clients.
+
+04: Automatically and intelligently cache connection and join/part messages
+Secondary client-resources will need to be presented with the 000-005, JOIN, etc. messages on connect so that the client IRC software can enter the correct state. These messages should be cached on the upstream connection intelligently. For example, sending a PART for a given channel should remove all JOIN related messages for that channel from the cache (and might need to insert a PART server response).
+In addition, only the most recent channel mode and topic messages should be cached.
+This implies some level of protocol awareness at the upstream connection.
+
+05: Store configurable-length backlogs per upstream channel
+On connecting a client-resource should receive all messages for each channel from the last-message known to have been received by that client-resource onwards.
+We need to find some way to confirm receipt. Perhaps each time a client-resource sends a message towards the upstream we should 'check-in' with the backlog manager. We can assume that the client-resource has been 'alive' and received all messages forwarded to it until this point, and mark them as 'read'. (This assumes that the client-resource has not initiated a new connection in the meanwhile).
+
+
+
