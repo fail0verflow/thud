@@ -180,6 +180,10 @@ class IRCUpstreamConnection(LineReceiver):
             self.queue.append(line)
         for client in self.clients.values():
             client.sendLine(line)
+
+    def connectionLost(self, reason):
+        print "UPSTREAM DISCONNECTED"
+        # We should probably use a ReconnectingClientProtocol or something
         
 class IRCUpstreamConnectionFactory(Factory):
     def __init__(self, uri):
