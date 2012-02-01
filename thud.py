@@ -68,23 +68,24 @@ class IRCProxyFactory(Factory):
                 key,value = kv.split("=")
                 args[key] = value
         return uri, args
-    def attach_upstream(self, uri, client):
+    def attach_upstream(self, uri, client=None):
         print "REQUESTED attach to upstream %s" % uri
         uri, args = self.parse_uri(uri)
 
         def __upstream_connected(upstream):
             print "UPSTREAM_CONNECTED!"
             self.upstream_connections[uri] = upstream
-            upstream.register_client(client,args)
-            client.upstream_attached(upstream)
+            if client:
+                upstream.register_client(client,args)
+                client.upstream_attached(upstream)
         if uri in self.upstream_connections:
             print "ALREADY HAVE THIS UPSTREAM"
             __upstream_connected(self.upstream_connections[uri])
         else:
-            d = self.connect_upstream(uri,client,args)
+            d = self.connect_upstream(uri,args)
             d.addCallback(__upstream_connected)
 
-    def connect_upstream(self, uri, client, args):
+    def connect_upstream(self, uri, args):
         m = re.match("(?:(?P<proto>[a-zA-i0-9]+)://)?(?P<host>[a-zA-Z0-9.-]+)(:?P<port>[0-9]+)?/?",uri)
         parts = m.groupdict()
         protocol = parts.get("proto","irc").lower()
@@ -139,6 +140,11 @@ class IRCUpstreamConnectionFactory(Factory):
     def buildProtocol(self, addr):
         return IRCUpstreamConnection(self.uri)
 
-reactor.listenTCP(1234,IRCProxyFactory())
-#reactor.connectTCP("localhost",1234,IRCUpstreamConnectionFactory())
-reactor.run()
+if __name__ == '__main__':
+    proxyfactory = IRCProxyFactory()
+    #TODO: read each .user file. For each upstream, 
+    # call proxyfactory.attach_upstream(uri)
+    # NOTE: we probably need to change uri to be an object 
+    # containing upstream config and linking it to the user.
+    reactor.listenTCP(1234,proxyfactory)
+    reactor.run()
