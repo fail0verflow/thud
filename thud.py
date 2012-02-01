@@ -14,6 +14,7 @@ FORWARDING          = 3
 class IRCProxy(LineReceiver):
     state = STATE_NONE
     upstream_queue = []
+    upstream = None
     def connectionMade(self):
         print "CLIENT CONNECTED"
         self.state = WAITING_FOR_PASS
@@ -42,6 +43,15 @@ class IRCProxy(LineReceiver):
             print "PLAYING OUT: %s" % line
             self.upstream.sendLine(line)
         self.upstream_queue = []
+
+    def connectionLost(self, reason):
+        print "CLIENT DISCONNECTED"
+        # not a bad idea to notify the upstream or something
+        if self.upstream:
+            self.upstream.unregister_client(self)
+    def shutdown(self):
+        print "CLIENT TOLD TO SHUTDOWN"
+        self.transport.abortConnection()
             
 
 class IRCProxyFactory(Factory):
@@ -102,6 +112,9 @@ class IRCUpstreamConnection(LineReceiver):
         else:
             # use a random resource identifier
             resource = uuid.uuid4().hex
+        if resource in self.clients:
+            # uh oh. This resource is already registered.
+            self.clients[resource].shutdown()
         self.clients[resource] = client
         client.resource = resource
         for line in self.queue:

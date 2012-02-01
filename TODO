@@ -17,5 +17,6 @@ This implies some level of protocol awareness at the upstream connection.
 On connecting a client-resource should receive all messages for each channel from the last-message known to have been received by that client-resource onwards.
 We need to find some way to confirm receipt. Perhaps each time a client-resource sends a message towards the upstream we should 'check-in' with the backlog manager. We can assume that the client-resource has been 'alive' and received all messages forwarded to it until this point, and mark them as 'read'. (This assumes that the client-resource has not initiated a new connection in the meanwhile).
 
-
+06: Automatically filter 'repeated' messages towards upstream
+Don't resent 'registration' messages like USER or NICK on secondary-client-resource connection. Also, don't resend JOINs if the channel is already known to be 'joined.
 
