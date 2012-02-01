@@ -87,7 +87,7 @@ class IRCProxyFactory(Factory):
     def connect_upstream(self, uri, client, args):
         m = re.match("(?:(?P<proto>[a-zA-i0-9]+)://)?(?P<host>[a-zA-Z0-9.-]+)(:?P<port>[0-9]+)?/?",uri)
         parts = m.groupdict()
-        protocol = parts.get("proto","ircs").lower()
+        protocol = parts.get("proto","irc").lower()
         host = parts.get("host")
         port = parts.get("port","6667")
 
