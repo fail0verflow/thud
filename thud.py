@@ -5,7 +5,7 @@ from twisted.internet import reactor
 from twisted.internet.endpoints import clientFromString
 import uuid
 import re
-import json
+import yaml
 
 
 STATE_NONE          = 0
@@ -200,6 +200,6 @@ if __name__ == '__main__':
     # containing upstream config and linking it to the user.
     for user_file in glob.glob("*.user"):
         with open(user_file,'rt') as f:
-            proxyfactory.process_user_config(json.loads(f.read()))
+            proxyfactory.process_user_config(yaml.load(f.read()))
     reactor.listenTCP(1234,proxyfactory)
     reactor.run()
