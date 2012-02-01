@@ -5,6 +5,7 @@ from twisted.internet import reactor
 from twisted.internet.endpoints import clientFromString
 import uuid
 import re
+import json
 
 
 STATE_NONE          = 0
@@ -53,11 +54,45 @@ class IRCProxy(LineReceiver):
         print "CLIENT TOLD TO SHUTDOWN"
         self.transport.abortConnection()
             
+class UpstreamInfo(object):
+    def __init__(self,config,user):
+        self.config = config
+        self.user = user
+    def get_uri(self):
+        return self.config["uri"]
+
+class UserInfo(object):
+    def __init__(self, config):
+        self.config = config
+    def get_name(self):
+        return self.config.get('name')
+    def authenticate(self, password):
+        raise NotImplemmented
+    def get_upstreams(self):
+        return {c["ref"]: UpstreamInfo(c,self) for c in self.config['upstreams']}
+    def get_upstream(self, ref):
+        return self.get_upstreams().get(ref,None)
+
 
 class IRCProxyFactory(Factory):
     protocol = IRCProxy
     def __init__(self):
         self.upstream_connections = {}
+        self.users = {}
+
+    def process_user_config(self, config):
+        user = UserInfo(config)
+        print "PROCESSING USER CONFIG FOR %s" % user.get_name()
+        self.users[user.get_name()] = user
+        for ref, upstreaminfo in user.get_upstreams().items():
+            print "\t", ref, upstreaminfo.get_uri()
+            d = self.connect_upstream(upstreaminfo.get_uri(),None)
+            def __connected(upstream):
+                print "UPSTREAM CONNECTED FOR %s" % upstreaminfo.get_uri()
+                # we need to do a USER and NICK command to the server here.
+                return upstream
+            d.addCallback(__connected)
+
     def parse_uri(self, uri):
         qs = ""
         if "?" in uri:
@@ -147,10 +182,14 @@ class IRCUpstreamConnectionFactory(Factory):
         return IRCUpstreamConnection(self.uri)
 
 if __name__ == '__main__':
+    import glob
     proxyfactory = IRCProxyFactory()
     #TODO: read each .user file. For each upstream, 
     # call proxyfactory.attach_upstream(uri)
     # NOTE: we probably need to change uri to be an object 
     # containing upstream config and linking it to the user.
+    for user_file in glob.glob("*.user"):
+        with open(user_file,'rt') as f:
+            proxyfactory.process_user_config(json.loads(f.read()))
     reactor.listenTCP(1234,proxyfactory)
     reactor.run()
