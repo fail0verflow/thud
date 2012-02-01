@@ -60,6 +60,8 @@ class UpstreamInfo(object):
         self.user = user
     def get_uri(self):
         return self.config["uri"]
+    def get_nick(self):
+        return self.config.get("nick",self.user.get_nick())
 
 class UserInfo(object):
     def __init__(self, config):
@@ -72,6 +74,8 @@ class UserInfo(object):
         return {c["ref"]: UpstreamInfo(c,self) for c in self.config['upstreams']}
     def get_upstream(self, ref):
         return self.get_upstreams().get(ref,None)
+    def get_nick(self):
+        return self.config["nick"]
 
 
 class IRCProxyFactory(Factory):
@@ -86,9 +90,9 @@ class IRCProxyFactory(Factory):
         self.users[user.get_name()] = user
         for ref, upstreaminfo in user.get_upstreams().items():
             print "\t", ref, upstreaminfo.get_uri()
-            d = self.connect_upstream(upstreaminfo.get_uri(),None)
+            d = self.connect_upstream(upstreaminfo)
             def __connected(upstream):
-                print "UPSTREAM CONNECTED FOR %s" % upstreaminfo.get_uri()
+                print "UPSTREAM CONNECTED FOR %s" % upstream.config.get_uri()
                 # we need to do a USER and NICK command to the server here.
                 return upstream
             d.addCallback(__connected)
@@ -116,10 +120,11 @@ class IRCProxyFactory(Factory):
             print "ALREADY HAVE THIS UPSTREAM"
             __upstream_connected(self.upstream_connections[uri])
         else:
-            d = self.connect_upstream(uri,args)
+            d = self.connect_upstream(UpstreamInfo({"uri":uri,"args":args},None))
             d.addCallback(__upstream_connected)
 
-    def connect_upstream(self, uri, args):
+    def connect_upstream(self, upstreamconfig):
+        uri = upstreamconfig.get_uri()
         m = re.match("(?:(?P<proto>[a-zA-i0-9]+)://)?(?P<host>[a-zA-Z0-9.-]+)(:?P<port>[0-9]+)?/?",uri)
         parts = m.groupdict()
         protocol = parts.get("proto","irc").lower()
@@ -135,6 +140,7 @@ class IRCProxyFactory(Factory):
         d = endpoint.connect(IRCUpstreamConnectionFactory(uri))
         def __connected(upstream):
             print "UPSTREAM_CONNECTED!"
+            upstream.config = upstreamconfig
             self.upstream_connections[uri] = upstream
             return upstream
         d.addCallback(__connected)
