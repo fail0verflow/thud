@@ -1,0 +1,29 @@
+{
+	"name": "sven",
+	"password": "0277edb43698f1a506911ada4e91b5188683daed",
+	
+	"upstreams": [
+		{
+			"ref": "efnet",
+			"uri": "ircs://irc.efnet.org:6667",
+			"nick": "sven",
+
+			"channels": [
+				{
+					name: "#awesome"
+				},
+
+				{
+					name: "#sekrit",
+					key: "test"
+				}
+			]
+		},
+
+		{
+			"ref": "freenode",
+			"uri": "ircs://irc.freenode.org:6667",
+			"nick": "sven"
+		}
+	]
+}
