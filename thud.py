@@ -68,16 +68,15 @@ class IRCProxyFactory(Factory):
                 key,value = kv.split("=")
                 args[key] = value
         return uri, args
-    def attach_upstream(self, uri, client=None):
+    def attach_upstream(self, uri, client):
         print "REQUESTED attach to upstream %s" % uri
         uri, args = self.parse_uri(uri)
 
         def __upstream_connected(upstream):
-            print "UPSTREAM_CONNECTED!"
-            self.upstream_connections[uri] = upstream
-            if client:
-                upstream.register_client(client,args)
-                client.upstream_attached(upstream)
+            print "UPSTREAM_CONNECTED, ATTACHING CLIENT!"
+            upstream.register_client(client,args)
+            client.upstream_attached(upstream)
+            return upstream
         if uri in self.upstream_connections:
             print "ALREADY HAVE THIS UPSTREAM"
             __upstream_connected(self.upstream_connections[uri])
@@ -98,7 +97,13 @@ class IRCProxyFactory(Factory):
             epproto = "ssl"
         endpointstring = "%s:host=%s:port=%s" % (epproto,host,port)
         endpoint = clientFromString(reactor,endpointstring)
-        return endpoint.connect(IRCUpstreamConnectionFactory(uri))
+        d = endpoint.connect(IRCUpstreamConnectionFactory(uri))
+        def __connected(upstream):
+            print "UPSTREAM_CONNECTED!"
+            self.upstream_connections[uri] = upstream
+            return upstream
+        d.addCallback(__connected)
+        return d
 
 
 
@@ -116,6 +121,7 @@ class IRCUpstreamConnection(LineReceiver):
         if resource in self.clients:
             # uh oh. This resource is already registered.
             self.clients[resource].shutdown()
+        print "REGISTERING CLIENT WITH RESOURCE %s" % resource
         self.clients[resource] = client
         client.resource = resource
         for line in self.queue:
