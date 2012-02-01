@@ -10,12 +10,12 @@
 
 			"channels": [
 				{
-					name: "#awesome"
+					"name": "#awesome"
 				},
 
 				{
-					name: "#sekrit",
-					key: "test"
+					"name": "#sekrit",
+					"key": "test"
 				}
 			]
 		},
