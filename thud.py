@@ -196,18 +196,12 @@ class IRCBouncer:
 
 
 
-STATE_NONE          = 0
-WAITING_FOR_PASS    = 1
-CONNECTING_UPSTREAM = 2
-FORWARDING          = 3
 class IRCClientConnection(CallBackLineReceiver):
     def __init__(self, bouncer):
         CallBackLineReceiver.__init__(self)
         self.bouncer = bouncer
-        self.state = STATE_NONE
     def connectionMade(self):
         print "CLIENT CONNECTED"
-        self.state = WAITING_FOR_PASS
         self.register_callback(CALLBACK_MESSAGE,self.lineReceived_filter_callback)
     def lineReceived_filter_callback(self,dummy,line):
         if line.startswith("PASS"):
