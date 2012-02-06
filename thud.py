@@ -44,12 +44,17 @@ class NoSuchUpstream(Exception):
 
 class User(object):
     """ This is the central class in thud. A User instance acts as a central point for all clients and upstream connections. All messages pass through here. """
-    def __init__(self, bouncer, config):
+    def __init__(self, bouncer, configfile):
         self.bouncer = bouncer
-        self.config = config
+        self.configfile = configfile
+        with open(self.configfile,'rt') as f:
+            self.config = yaml.load(f.read())
         self.upstream_connections = {} #key is ref
         self.clients = {} # key is resource
 
+    def save_config(self):
+        with open(self.configfile,'wt') as f:
+            f.write(yaml.dump(config))
     def get_name(self):
         return self.config.get('name').lower()
     def get_realname(self):
@@ -141,8 +146,7 @@ class IRCBouncer:
         self.users = {}
         reactor.listenTCP(port,IRCClientConnectionFactory(self))
         for user_file in glob.glob("%s/*.user" % configpath):
-            with open(user_file,'rt') as f:
-                self.process_user_config(yaml.load(f.read()))
+            self.process_user_config(user_file)
 
     def process_user_config(self, config):
         user = User(self,config)
