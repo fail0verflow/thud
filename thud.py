@@ -54,7 +54,7 @@ class IRCProxy(LineReceiver):
         print "CLIENT TOLD TO SHUTDOWN"
         self.transport.abortConnection()
             
-class UpstreamInfo(object):
+class UpstreamConfig(object):
     def __init__(self,config,user):
         self.config = config
         self.user = user
@@ -63,19 +63,40 @@ class UpstreamInfo(object):
     def get_nick(self):
         return self.config.get("nick",self.user.get_nick())
 
-class UserInfo(object):
+class User(object):
     def __init__(self, config):
         self.config = config
+        self.upstream_connections = {}
+
     def get_name(self):
         return self.config.get('name')
-    def authenticate(self, password):
-        raise NotImplemmented
-    def get_upstreams(self):
-        return {c["ref"]: UpstreamInfo(c,self) for c in self.config['upstreams']}
-    def get_upstream(self, ref):
-        return self.get_upstreams().get(ref,None)
+    def get_realname(self):
+        return self.config.get('realname',self.get_name())
+    def get_upstream_configs(self):
+        return {c["ref"]: UpstreamConfig(c,self) for c in self.config['upstreams']}
+    def get_upstream_config(self, ref):
+        return self.get_upstream_configs().get(ref,None)
     def get_nick(self):
         return self.config["nick"]
+
+    def authenticate_client(self, password):
+        """ Called when a downstream client connects and is attempting to authenticate """
+        raise NotImplemmented
+
+    def upstream_connected(self, upstream):
+        """ Called when one of the upstream connections has successfully connected to the upstream server """
+        self.upstream_connections[upstream.config.get_uri()] = upstream
+        print "[%s] UPSTREAM CONNECTED FOR %s" % (self.get_name(),upstream.config.get_uri())
+        # we need to do a USER and NICK command to the server here.
+        upstream.send("NICK %s" % self.get_name())
+        upstream.send("USER %s 0 * %s" % (self.get_name(), self.get_realname()))
+        return upstream
+
+    def upstream_disconnected(self, upstream):
+        """ Called when one of the upstream connections disconnects for whatever reason """
+        del self.upstream_connections[upstream.config.get_uri()]
+        print "[%s] UPSTREAM DISCONNECTED FOR %s" % (self.get_name(),upstream.config.get_uri())
+        return upstream
 
 
 class IRCProxyFactory(Factory):
@@ -85,16 +106,14 @@ class IRCProxyFactory(Factory):
         self.users = {}
 
     def process_user_config(self, config):
-        user = UserInfo(config)
+        user = User(config)
         print "PROCESSING USER CONFIG FOR %s" % user.get_name()
         self.users[user.get_name()] = user
-        for ref, upstreaminfo in user.get_upstreams().items():
-            print "\t", ref, upstreaminfo.get_uri()
-            d = self.connect_upstream(upstreaminfo)
+        for ref, upstreamconfig in user.get_upstream_configs().items():
+            print "\t", ref, upstreamconfig.get_uri()
+            d = self.connect_upstream(upstreamconfig)
             def __connected(upstream):
-                print "UPSTREAM CONNECTED FOR %s" % upstream.config.get_uri()
-                # we need to do a USER and NICK command to the server here.
-                return upstream
+                return upstream.config.user.upstream_connected(upstream)
             d.addCallback(__connected)
 
     def parse_uri(self, uri):
@@ -120,7 +139,7 @@ class IRCProxyFactory(Factory):
             print "ALREADY HAVE THIS UPSTREAM"
             __upstream_connected(self.upstream_connections[uri])
         else:
-            d = self.connect_upstream(UpstreamInfo({"uri":uri,"args":args},None))
+            d = self.connect_upstream(UpstreamConfig({"uri":uri,"args":args},None))
             d.addCallback(__upstream_connected)
 
     def connect_upstream(self, upstreamconfig):
@@ -173,6 +192,9 @@ class IRCUpstreamConnection(LineReceiver):
         if client.resource in self.clients:
             del self.clients[client.resource]
 
+    def send(self, line):
+        print "FORWARDING TO SERVER: %s" % line
+        self.sendLine(line)
     def lineReceived(self,line):
         print "FORWARDING TO CLIENTS: %s" % line
         code = line.split(" ")[1]
