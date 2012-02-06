@@ -158,7 +158,7 @@ class IRCBouncer:
 
     def connect_upstream(self, upstreamconfig):
         uri = upstreamconfig.get_uri()
-        m = re.match("(?:(?P<proto>[a-zA-i0-9]+)://)?(?P<host>[a-zA-Z0-9.-]+)(:?P<port>[0-9]+)?/?",uri)
+        m = re.match("(?:(?P<proto>[a-zA-i0-9]+)://)?(?P<host>[a-zA-Z0-9.-]+)(?:[:](?P<port>[0-9]+))?/?",uri)
         parts = m.groupdict()
         protocol = parts.get("proto","irc").lower()
         host = parts.get("host")
