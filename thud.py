@@ -208,14 +208,13 @@ class IRCClientConnection(CallBackLineReceiver):
     def connectionMade(self):
         print "CLIENT CONNECTED"
         self.state = WAITING_FOR_PASS
-    def lineReceived(self,line):
-        if self.state == WAITING_FOR_PASS and line.startswith("PASS"):
+        self.register_callback(CALLBACK_MESSAGE,self.lineReceived_filter_callback)
+    def lineReceived_filter_callback(self,dummy,line):
+        if line.startswith("PASS"):
             token = line[5:]
             print "CLIENT CONNECTED WITH TOKEN: %s" % token
-            self.state = CONNECTING_UPSTREAM
             self.bouncer.connect_client(self,token)
-        else:
-            CallBackLineReceiver.lineReceived(self,line)
+            self.unregister_callback(CALLBACK_MESSAGE,self.lineReceived_filter_callback)
 
 class IRCClientConnectionFactory(Factory):
     def __init__(self,bouncer):
