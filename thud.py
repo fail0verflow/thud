@@ -34,6 +34,8 @@ class UpstreamConfig(object):
         return self.config["ref"]
     def get_nick(self):
         return self.config.get("nick",self.user.get_nick())
+    def get_realname(self):
+        return self.config.get("realname",self.user.get_realname())
     def get_autoconnect(self):
         return self.config.get("autoconnect",False)
 
@@ -65,6 +67,8 @@ class User(object):
         return self.get_upstream_configs().get(ref,None)
     def get_nick(self):
         return self.config["nick"]
+    def get_realname(self):
+        return self.config.get("realname","Thud Userson")
 
     def authenticate_client(self, password):
         """ Called when a downstream client connects and is attempting to authenticate """
@@ -77,8 +81,8 @@ class User(object):
         upstream.register_callback(CALLBACK_MESSAGE, self.upstream_message)
         upstream.register_callback(CALLBACK_DISCONNECTED, self.upstream_disconnected)
         # we need to do a USER and NICK command to the server here.
-        self.upstream_send(upstream,"NICK %s" % self.get_name())
-        self.upstream_send(upstream,"USER %s 0 * %s" % (self.get_name(), self.get_realname()))
+        self.upstream_send(upstream,"NICK %s" % upstream.config.get_nick())
+        self.upstream_send(upstream,"USER %s 0 * :%s" % (upstream.config.get_nick(), upstream.config.get_realname()))
         return upstream
     def upstream_send(self, upstream, line):
         """ Convenience function used to send messages to an upstream server """

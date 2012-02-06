@@ -1,5 +1,6 @@
 name: thudtest
 password: 0277edb43698f1a506911ada4e91b5188683daed
+nick: thudtester
 
 upstreams: 
     - ref: efnet 
