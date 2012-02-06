@@ -68,7 +68,7 @@ class User(object):
     def get_nick(self):
         return self.config["nick"]
     def get_realname(self):
-        return self.config.get("realname","Thud Userson")
+        return self.config.get("realname",self.get_name())
 
     def authenticate_client(self, password):
         """ Called when a downstream client connects and is attempting to authenticate """
