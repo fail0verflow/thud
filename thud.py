@@ -7,73 +7,55 @@ import uuid
 import re
 import yaml
 
-
-STATE_NONE          = 0
-WAITING_FOR_PASS    = 1
-CONNECTING_UPSTREAM = 2
-FORWARDING          = 3
-class IRCProxy(LineReceiver):
-    state = STATE_NONE
-    upstream_queue = []
-    upstream = None
-    def connectionMade(self):
-        print "CLIENT CONNECTED"
-        self.state = WAITING_FOR_PASS
+CALLBACK_MESSAGE        = 0
+CALLBACK_DISCONNECTED   = 1
+class CallBackLineReceiver(LineReceiver):
+    def __init__(self):
+        self.callbacks = { CALLBACK_MESSAGE: [], CALLBACK_DISCONNECTED: [] }
     def lineReceived(self,line):
-        if self.state == FORWARDING:
-            if len(self.upstream.clients) > 1 and line.startswith("USER"):
-                print "NOT RESENDING %s" % line
-                return
-            print "FORWARDING FROM CLIENT: %s" % line
-            self.upstream.sendLine(line)
-        elif self.state == WAITING_FOR_PASS and line.startswith("PASS"):
-            uri = line[5:]
-            print "REQUESTING UPSTREAM: %s" % uri
-            self.state = CONNECTING_UPSTREAM
-            self.factory.attach_upstream(uri,self)
-        elif self.state == CONNECTING_UPSTREAM:
-            print "RECEIVED FROM CLIENT KEEPING TILL AFTER CONNECT: %s" % line
-            self.upstream_queue.append(line)
-    def upstream_attached(self, upstream):
-        print "UPSTREAM_ATTACHED"
-        self.upstream = upstream
-        self.state = FORWARDING
-        if len(self.upstream.clients) > 1:
-            self.upstream_queue = []
-        for line in self.upstream_queue:
-            print "PLAYING OUT: %s" % line
-            self.upstream.sendLine(line)
-        self.upstream_queue = []
-
-    def connectionLost(self, reason):
-        print "CLIENT DISCONNECTED"
-        # not a bad idea to notify the upstream or something
-        if self.upstream:
-            self.upstream.unregister_client(self)
-    def shutdown(self):
-        print "CLIENT TOLD TO SHUTDOWN"
-        self.transport.abortConnection()
-            
+        for cb in self.callbacks[CALLBACK_MESSAGE]:
+            cb(self,line)
+    def connectionLost(self,line):
+        for cb in self.callbacks[CALLBACK_DISCONNECTED]:
+            cb(self)
+    def register_callback(self, kind, callback):
+        if not callback in self.callbacks[kind]:
+            self.callbacks[kind].append(callback)
+    def unregister_callback(self, kind, callback):
+        if callback in self.callbacks[kind]:
+            self.callbacks[kind].remove(callback)
 class UpstreamConfig(object):
     def __init__(self,config,user):
         self.config = config
         self.user = user
     def get_uri(self):
         return self.config["uri"]
+    def get_ref(self):
+        return self.config["ref"]
     def get_nick(self):
         return self.config.get("nick",self.user.get_nick())
+    def get_autoconnect(self):
+        return self.config.get("autoconnect",False)
+
+class AuthenticationFailed(Exception):
+    pass
+class NoSuchUpstream(Exception):
+    pass
 
 class User(object):
-    def __init__(self, config):
+    """ This is the central class in thud. A User instance acts as a central point for all clients and upstream connections. All messages pass through here. """
+    def __init__(self, bouncer, config):
+        self.bouncer = bouncer
         self.config = config
-        self.upstream_connections = {}
+        self.upstream_connections = {} #key is ref
+        self.clients = {} # key is resource
 
     def get_name(self):
-        return self.config.get('name')
+        return self.config.get('name').lower()
     def get_realname(self):
         return self.config.get('realname',self.get_name())
     def get_upstream_configs(self):
-        return {c["ref"]: UpstreamConfig(c,self) for c in self.config['upstreams']}
+        return {c["ref"].lower(): UpstreamConfig(c,self) for c in self.config['upstreams']}
     def get_upstream_config(self, ref):
         return self.get_upstream_configs().get(ref,None)
     def get_nick(self):
@@ -81,77 +63,95 @@ class User(object):
 
     def authenticate_client(self, password):
         """ Called when a downstream client connects and is attempting to authenticate """
-        raise NotImplemmented
+        return 1
 
     def upstream_connected(self, upstream):
         """ Called when one of the upstream connections has successfully connected to the upstream server """
-        self.upstream_connections[upstream.config.get_uri()] = upstream
         print "[%s] UPSTREAM CONNECTED FOR %s" % (self.get_name(),upstream.config.get_uri())
+        self.upstream_connections[upstream.config.get_ref()] = upstream
+        upstream.register_callback(CALLBACK_MESSAGE, self.upstream_message)
+        upstream.register_callback(CALLBACK_DISCONNECTED, self.upstream_disconnected)
         # we need to do a USER and NICK command to the server here.
-        upstream.send("NICK %s" % self.get_name())
-        upstream.send("USER %s 0 * %s" % (self.get_name(), self.get_realname()))
+        self.upstream_send(upstream,"NICK %s" % self.get_name())
+        self.upstream_send(upstream,"USER %s 0 * %s" % (self.get_name(), self.get_realname()))
         return upstream
+    def upstream_send(self, upstream, line):
+        """ Convenience function used to send messages to an upstream server """
+        print "[%s][%s] UPSTREAM_SEND: %s" % (self.get_name(),upstream.config.get_uri(),line)
+        upstream.sendLine(line)
     def upstream_message(self, upstream, line):
         """ Called when a message is received from an upstream connection. This message will usually be delivered to all clients, and may also be cached."""
-        pass
+        print "[%s][%s] UPSTREAM_RECV: %s" % (self.get_name(),upstream.config.get_uri(),line)
+        for resource,client in self.clients.items():
+            if client.upstreamref == upstream.config.get_ref():
+                client.sendLine(line)
+
     def upstream_disconnected(self, upstream):
         """ Called when one of the upstream connections disconnects for whatever reason """
-        del self.upstream_connections[upstream.config.get_uri()]
+        del self.upstream_connections[upstream.config.get_ref()]
         print "[%s] UPSTREAM DISCONNECTED FOR %s" % (self.get_name(),upstream.config.get_uri())
         return upstream
 
-    def client_connected(self, client):
+    def client_connected(self, client, token):
         """ Called when a client connects for this user."""
         # We need to perform authentication, resource resolution, attach to an upstream,  and possibly replay parts of the cache.
+        password,upstreamref,resource = token.split(":")
+        if not self.authenticate_client(password):
+            raise AuthenticationFailed()
+        
+        upstreamref = upstreamref.lower()
+        client.resource = resource
+        client.upstreamref = upstreamref
+        client.register_callback(CALLBACK_MESSAGE,self.client_message)
+        client.register_callback(CALLBACK_DISCONNECTED,self.client_disconnected)
+        self.clients[resource] = client
+        if upstreamref in self.upstream_connections:
+            client.upstream = self.upstream_connections[upstreamref]
+        else:
+            upstreamconfig = self.get_upstream_config(upstreamref) 
+            if upstreamconfig: # connect on demand
+                print "[%s] ON DEMAND CONNECTING TO UPSTREAM %s" % (self.get_name(),upstreamconfig.get_uri())
+                d = self.bouncer.connect_upstream(upstreamconfig)
+                def __connected(upstream):
+                    res = self.upstream_connected(upstream)
+                    client.upstream = res
+                    return res
+                d.addCallback(__connected)
+            else:
+                raise NoSuchUpstream(upstreamref)
+
         return client
     def client_message(self, client, line):
         """ Called when a message is received from a client. This message will usually be relayed to the relevant upstream, although it might be diverted to the cache instead. """
-        pass
+        print "[%s][%s][%s] CLIENT_RECV: %s" % (self.get_name(),client.upstreamref,client.resource,line)
+        if line.startswith("USER") or line.startswith("NICK"):
+            print "[%s][%s][%s] DROPPING_CLIENT_REGISTRATION: %s" % (self.get_name(),client.upstreamref,client.resource,line)
+            return
+        if client.upstreamref in self.upstream_connections:
+            self.upstream_connections[client.upstreamref].sendLine(line)
+        else:
+            print "[%s][%s][%s] ORPHAN_CLIENT_MSG: %s " % (self.get_name(),client.upstreamref,client.resource,line)
     def client_disconnected(self, client):
         """ Called when a client disconnectes for this user."""
+        del self.clients[client.resource]
 
-class IRCProxyFactory(Factory):
-    protocol = IRCProxy
-    def __init__(self):
-        self.upstream_connections = {}
+
+class IRCBouncer:
+    def __init__(self,port):
         self.users = {}
+        reactor.listenTCP(port,IRCClientConnectionFactory(self))
 
     def process_user_config(self, config):
-        user = User(config)
+        user = User(self,config)
         print "PROCESSING USER CONFIG FOR %s" % user.get_name()
         self.users[user.get_name()] = user
         for ref, upstreamconfig in user.get_upstream_configs().items():
-            print "\t", ref, upstreamconfig.get_uri()
-            d = self.connect_upstream(upstreamconfig)
-            def __connected(upstream):
-                return upstream.config.user.upstream_connected(upstream)
-            d.addCallback(__connected)
-
-    def parse_uri(self, uri):
-        qs = ""
-        if "?" in uri:
-            uri, qs = uri.split("?")
-        args = {}
-        if qs:
-            for kv in qs.split("&"):
-                key,value = kv.split("=")
-                args[key] = value
-        return uri, args
-    def attach_upstream(self, uri, client):
-        print "REQUESTED attach to upstream %s" % uri
-        uri, args = self.parse_uri(uri)
-
-        def __upstream_connected(upstream):
-            print "UPSTREAM_CONNECTED, ATTACHING CLIENT!"
-            upstream.register_client(client,args)
-            client.upstream_attached(upstream)
-            return upstream
-        if uri in self.upstream_connections:
-            print "ALREADY HAVE THIS UPSTREAM"
-            __upstream_connected(self.upstream_connections[uri])
-        else:
-            d = self.connect_upstream(UpstreamConfig({"uri":uri,"args":args},None))
-            d.addCallback(__upstream_connected)
+            print "\t", ref, upstreamconfig.get_uri(), upstreamconfig.get_autoconnect() and "AUTOCONNECT" or "ONDEMAND"
+            if upstreamconfig.get_autoconnect():
+                d = self.connect_upstream(upstreamconfig)
+                def __connected(upstream):
+                    return upstream.config.user.upstream_connected(upstream)
+                d.addCallback(__connected)
 
     def connect_upstream(self, upstreamconfig):
         uri = upstreamconfig.get_uri()
@@ -171,52 +171,51 @@ class IRCProxyFactory(Factory):
         def __connected(upstream):
             print "UPSTREAM_CONNECTED!"
             upstream.config = upstreamconfig
-            self.upstream_connections[uri] = upstream
             return upstream
         d.addCallback(__connected)
         return d
 
-
-
-class IRCUpstreamConnection(LineReceiver):
-    def __init__(self,uri):
-        self.uri = uri
-        self.clients = {}
-        self.queue = []
-    def register_client(self, client, args):
-        if "resource" in args:
-            resource = args[resource]
+    def connect_client(self, client, token):
+        username,sep,token = token.partition(":")
+        username = username.lower()
+        if username in self.users:
+            self.users[username].client_connected(client, token)
         else:
-            # use a random resource identifier
-            resource = uuid.uuid4().hex
-        if resource in self.clients:
-            # uh oh. This resource is already registered.
-            self.clients[resource].shutdown()
-        print "REGISTERING CLIENT WITH RESOURCE %s" % resource
-        self.clients[resource] = client
-        client.resource = resource
-        for line in self.queue:
-            print "REPLAYING TO CLIENT: %s" % line
-            client.sendLine(line)
+            print "CLIENT CONNECTED WITH UNKNOWN USERNAME: %s" % username
 
-    def unregister_client(self, client):
-        if client.resource in self.clients:
-            del self.clients[client.resource]
 
-    def send(self, line):
-        print "FORWARDING TO SERVER: %s" % line
-        self.sendLine(line)
+
+STATE_NONE          = 0
+WAITING_FOR_PASS    = 1
+CONNECTING_UPSTREAM = 2
+FORWARDING          = 3
+class IRCClientConnection(CallBackLineReceiver):
+    def __init__(self, bouncer):
+        CallBackLineReceiver.__init__(self)
+        self.bouncer = bouncer
+        self.state = STATE_NONE
+    def connectionMade(self):
+        print "CLIENT CONNECTED"
+        self.state = WAITING_FOR_PASS
     def lineReceived(self,line):
-        print "FORWARDING TO CLIENTS: %s" % line
-        code = line.split(" ")[1]
-        if code in ["000","001","002","003","004","005","353","366","324","329","352","315","JOIN"]:
-            self.queue.append(line)
-        for client in self.clients.values():
-            client.sendLine(line)
+        if self.state == WAITING_FOR_PASS and line.startswith("PASS"):
+            token = line[5:]
+            print "CLIENT CONNECTED WITH TOKEN: %s" % token
+            self.state = CONNECTING_UPSTREAM
+            self.bouncer.connect_client(self,token)
+        else:
+            CallBackLineReceiver.lineReceived(self,line)
 
-    def connectionLost(self, reason):
-        print "UPSTREAM DISCONNECTED"
-        # We should probably use a ReconnectingClientProtocol or something
+class IRCClientConnectionFactory(Factory):
+    def __init__(self,bouncer):
+        self.bouncer = bouncer
+    def buildProtocol(self, addr):
+        return IRCClientConnection(self.bouncer)
+
+class IRCUpstreamConnection(CallBackLineReceiver):
+    def __init__(self,uri):
+        CallBackLineReceiver.__init__(self)
+        self.uri = uri
         
 class IRCUpstreamConnectionFactory(Factory):
     def __init__(self, uri):
@@ -226,13 +225,13 @@ class IRCUpstreamConnectionFactory(Factory):
 
 if __name__ == '__main__':
     import glob
-    proxyfactory = IRCProxyFactory()
+    bouncer = IRCBouncer(1234)
     #TODO: read each .user file. For each upstream, 
     # call proxyfactory.attach_upstream(uri)
     # NOTE: we probably need to change uri to be an object 
     # containing upstream config and linking it to the user.
     for user_file in glob.glob("*.user"):
         with open(user_file,'rt') as f:
-            proxyfactory.process_user_config(yaml.load(f.read()))
-    reactor.listenTCP(1234,proxyfactory)
+            bouncer.process_user_config(yaml.load(f.read()))
+
     reactor.run()
