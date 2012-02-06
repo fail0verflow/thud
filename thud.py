@@ -91,13 +91,24 @@ class User(object):
         upstream.send("NICK %s" % self.get_name())
         upstream.send("USER %s 0 * %s" % (self.get_name(), self.get_realname()))
         return upstream
-
+    def upstream_message(self, upstream, line):
+        """ Called when a message is received from an upstream connection. This message will usually be delivered to all clients, and may also be cached."""
+        pass
     def upstream_disconnected(self, upstream):
         """ Called when one of the upstream connections disconnects for whatever reason """
         del self.upstream_connections[upstream.config.get_uri()]
         print "[%s] UPSTREAM DISCONNECTED FOR %s" % (self.get_name(),upstream.config.get_uri())
         return upstream
 
+    def client_connected(self, client):
+        """ Called when a client connects for this user."""
+        # We need to perform authentication, resource resolution, attach to an upstream,  and possibly replay parts of the cache.
+        return client
+    def client_message(self, client, line):
+        """ Called when a message is received from a client. This message will usually be relayed to the relevant upstream, although it might be diverted to the cache instead. """
+        pass
+    def client_disconnected(self, client):
+        """ Called when a client disconnectes for this user."""
 
 class IRCProxyFactory(Factory):
     protocol = IRCProxy
