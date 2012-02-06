@@ -1,10 +1,10 @@
-name: sven
+name: thudtest
 password: 0277edb43698f1a506911ada4e91b5188683daed
 
 upstreams: 
     - ref: efnet 
-      uri: ircs://irc.efnet.org:6667
-      nick: sven
+      uri: irc://irc.efnet.org:6667
+      nick: thudtest
 
       channels: 
         - name: '#awesome'
@@ -13,5 +13,4 @@ upstreams:
         
 
     - ref: freenode
-      uri: ircs://irc.freenode.org:6667
-      nick: sven
+      uri: irc://irc.freenode.org:6667
