@@ -3,9 +3,9 @@ from twisted.internet.protocol import Factory, ClientFactory
 from twisted.protocols.basic import LineReceiver
 from twisted.internet import reactor
 from twisted.internet.endpoints import clientFromString
-import uuid
 import re
 import yaml
+import glob
 
 CALLBACK_MESSAGE        = 0
 CALLBACK_DISCONNECTED   = 1
@@ -137,9 +137,12 @@ class User(object):
 
 
 class IRCBouncer:
-    def __init__(self,port):
+    def __init__(self,port,configpath="."):
         self.users = {}
         reactor.listenTCP(port,IRCClientConnectionFactory(self))
+        for user_file in glob.glob("%s/*.user" % configpath):
+            with open(user_file,'rt') as f:
+                self.process_user_config(yaml.load(f.read()))
 
     def process_user_config(self, config):
         user = User(self,config)
@@ -224,14 +227,5 @@ class IRCUpstreamConnectionFactory(Factory):
         return IRCUpstreamConnection(self.uri)
 
 if __name__ == '__main__':
-    import glob
     bouncer = IRCBouncer(1234)
-    #TODO: read each .user file. For each upstream, 
-    # call proxyfactory.attach_upstream(uri)
-    # NOTE: we probably need to change uri to be an object 
-    # containing upstream config and linking it to the user.
-    for user_file in glob.glob("*.user"):
-        with open(user_file,'rt') as f:
-            bouncer.process_user_config(yaml.load(f.read()))
-
     reactor.run()
