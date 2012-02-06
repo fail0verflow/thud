@@ -5,12 +5,11 @@ upstreams:
     - ref: efnet 
       uri: irc://irc.efnet.org:6667
       nick: thudtest
-
       channels: 
         - name: '#awesome'
         - name: '#sekrit'
           key: test
-        
 
     - ref: freenode
-      uri: irc://irc.freenode.org:6667
+      uri: ircs://irc.freenode.net:6697
+      autoconnect: true
