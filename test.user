@@ -1,16 +1,12 @@
 name: thudtest
-password: 0277edb43698f1a506911ada4e91b5188683daed
+password: $6$rounds=41731$kLQeLkCceRMdfyD9$G/LOrKKOwZbJxelMNQHTeEZC749LmcYMhfWu8q3docA2urqjxbSx5CX2Okw5bFLNJHygR4wimdPfZ.mSkKx3..
 nick: thudtester
 
 upstreams: 
-    - ref: efnet 
-      uri: irc://irc.efnet.org:6667
-      nick: thudtest
-      channels: 
-        - name: '#awesome'
-        - name: '#sekrit'
-          key: test
 
     - ref: freenode
       uri: ircs://irc.freenode.net:6697
       autoconnect: true
+      channels: 
+        - name: '#thud-test'
+

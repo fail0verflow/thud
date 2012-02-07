@@ -3,6 +3,8 @@ from twisted.internet.protocol import Factory, ClientFactory
 from twisted.protocols.basic import LineReceiver
 from twisted.internet import reactor
 from twisted.internet.endpoints import clientFromString
+from passlib.apps import custom_app_context as pwd_context
+
 import re
 import yaml
 import glob
@@ -52,10 +54,17 @@ class User(object):
         return self.config["nick"]
     def get_realname(self):
         return self.config.get("realname",self.get_name())
+    def get_password(self):
+        return self.config.get("password")
 
     def authenticate_client(self, password):
         """ Called when a downstream client connects and is attempting to authenticate """
-        return 1
+        correct = self.get_password()
+	ok = pwd_context.verify(password, correct)
+	if ok == True:
+		return 1
+	else:
+		return 0
 
     def upstream_connected(self, upstream):
         """ Called when one of the upstream connections has successfully connected to the upstream server """
