@@ -7,23 +7,6 @@ import re
 import yaml
 import glob
 
-CALLBACK_MESSAGE        = 0
-CALLBACK_DISCONNECTED   = 1
-class CallBackLineReceiver(LineReceiver):
-    def __init__(self):
-        self.callbacks = { CALLBACK_MESSAGE: [], CALLBACK_DISCONNECTED: [] }
-    def lineReceived(self,line):
-        for cb in self.callbacks[CALLBACK_MESSAGE]:
-            cb(self,line)
-    def connectionLost(self,line):
-        for cb in self.callbacks[CALLBACK_DISCONNECTED]:
-            cb(self)
-    def register_callback(self, kind, callback):
-        if not callback in self.callbacks[kind]:
-            self.callbacks[kind].append(callback)
-    def unregister_callback(self, kind, callback):
-        if callback in self.callbacks[kind]:
-            self.callbacks[kind].remove(callback)
 class UpstreamConfig(object):
     def __init__(self,config,user):
         self.config = config
@@ -195,6 +178,24 @@ class IRCBouncer:
             print "CLIENT CONNECTED WITH UNKNOWN USERNAME: %s" % username
 
 
+
+CALLBACK_MESSAGE        = 0
+CALLBACK_DISCONNECTED   = 1
+class CallBackLineReceiver(LineReceiver):
+    def __init__(self):
+        self.callbacks = { CALLBACK_MESSAGE: [], CALLBACK_DISCONNECTED: [] }
+    def lineReceived(self,line):
+        for cb in self.callbacks[CALLBACK_MESSAGE]:
+            cb(self,line)
+    def connectionLost(self,line):
+        for cb in self.callbacks[CALLBACK_DISCONNECTED]:
+            cb(self)
+    def register_callback(self, kind, callback):
+        if not callback in self.callbacks[kind]:
+            self.callbacks[kind].append(callback)
+    def unregister_callback(self, kind, callback):
+        if callback in self.callbacks[kind]:
+            self.callbacks[kind].remove(callback)
 
 class IRCClientConnection(CallBackLineReceiver):
     def __init__(self, bouncer):
