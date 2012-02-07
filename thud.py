@@ -60,12 +60,7 @@ class User(object):
 
     def authenticate_client(self, password):
         """ Called when a downstream client connects and is attempting to authenticate """
-        correct = self.get_password()
-	ok = pwd_context.verify(password, correct)
-	if ok == True:
-	    return 1
-	else:
-            return 0
+        return pwd_context.verify(password, self.get_password())
 
     def upstream_connected(self, upstream):
         """ Called when one of the upstream connections has successfully connected to the upstream server """
@@ -140,7 +135,9 @@ class User(object):
             print "[%s][%s][%s] ORPHAN_CLIENT_MSG: %s " % (self.get_name(),client.upstreamref,client.resource,line)
     def client_disconnected(self, client):
         """ Called when a client disconnectes for this user."""
+        print "[%s][%s] CLIENT_DISCONNECTED" % (self.get_name(),client.upstreamref)
         del self.clients[client.resource]
+
 
 
 class IRCBouncer:
@@ -223,7 +220,13 @@ class IRCClientConnection(CallBackLineReceiver):
         if line.startswith("PASS"):
             token = line[5:]
             print "CLIENT CONNECTED WITH TOKEN: %s" % token
-            self.bouncer.connect_client(self,token)
+            try: 
+                self.bouncer.connect_client(self,token)
+            except AuthenticationFailed:
+                print "BAD PASSWORD FOR CLIENT"
+                self.sendLine(":THUD 464 :Password is invalid!")
+                self.transport.loseConnection()
+                return
             self.unregister_callback(CALLBACK_MESSAGE,self.lineReceived_filter_callback)
 
 class IRCClientConnectionFactory(Factory):

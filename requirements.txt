@@ -1,0 +1,4 @@
+PyYAML>=3.10
+Twisted>=11.1.0
+passlib>=1.5.3
+pyOpenSSL>=0.13
