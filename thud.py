@@ -10,6 +10,8 @@ import yaml
 import glob
 import uuid
 
+import irc
+
 class UpstreamConfig(object):
     def __init__(self,config,user):
         self.config = config
@@ -68,6 +70,9 @@ class User(object):
         self.upstream_connections[upstream.config.get_ref()] = upstream
         upstream.register_callback(CALLBACK_MESSAGE, self.upstream_message)
         upstream.register_callback(CALLBACK_DISCONNECTED, self.upstream_disconnected)
+        upstream.cache = irc.Cache()
+        upstream.register_callback(CALLBACK_MESSAGE,upstream.cache.process_server_message)
+        
         # we need to do a USER and NICK command to the server here.
         self.upstream_send(upstream,"NICK %s" % upstream.config.get_nick())
         self.upstream_send(upstream,"USER %s 0 * :%s" % (upstream.config.get_nick(), upstream.config.get_realname()))
@@ -121,7 +126,6 @@ class User(object):
                 d.addCallback(__connected)
             else:
                 raise NoSuchUpstream(upstreamref)
-
         return client
     def client_message(self, client, line):
         """ Called when a message is received from a client. This message will usually be relayed to the relevant upstream, although it might be diverted to the cache instead. """
@@ -129,7 +133,10 @@ class User(object):
         if line.startswith("USER") or line.startswith("NICK"):
             print "[%s][%s][%s] DROPPING_CLIENT_REGISTRATION: %s" % (self.get_name(),client.upstreamref,client.resource,line)
             return
+
         if client.upstreamref in self.upstream_connections:
+            if client.upstream.cache.handle_client_message(client,line):
+                return
             self.upstream_connections[client.upstreamref].sendLine(line)
         else:
             print "[%s][%s][%s] ORPHAN_CLIENT_MSG: %s " % (self.get_name(),client.upstreamref,client.resource,line)
