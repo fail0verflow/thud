@@ -8,6 +8,7 @@ from passlib.apps import custom_app_context as pwd_context
 import re
 import yaml
 import glob
+import uuid
 
 class UpstreamConfig(object):
     def __init__(self,config,user):
@@ -96,7 +97,12 @@ class User(object):
     def client_connected(self, client, token):
         """ Called when a client connects for this user."""
         # We need to perform authentication, resource resolution, attach to an upstream,  and possibly replay parts of the cache.
-        password,upstreamref,resource = token.split(":")
+        if token.count(":") == 3:
+            password,upstreamref,resource = token.split(":")
+        else:
+            password,upstreamref = token.split(":")
+            resource = uuid.uuid4().hex
+
         if not self.authenticate_client(password):
             raise AuthenticationFailed()
         
