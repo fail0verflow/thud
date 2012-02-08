@@ -83,7 +83,7 @@ class User(object):
         upstream.sendLine(line)
     def upstream_message(self, upstream, line):
         """ Called when a message is received from an upstream connection. This message will usually be delivered to all clients, and may also be cached."""
-        print "[%s][%s] UPSTREAM_RECV: %s" % (self.get_name(),upstream.config.get_uri(),line)
+        #print "[%s][%s] UPSTREAM_RECV: %s" % (self.get_name(),upstream.config.get_uri(),line)
         for resource,client in self.clients.items():
             if client.upstreamref == upstream.config.get_ref():
                 client.sendLine(line)
@@ -114,6 +114,7 @@ class User(object):
         self.clients[resource] = client
         if upstreamref in self.upstream_connections:
             client.upstream = self.upstream_connections[upstreamref]
+            client.upstream.cache.attach_client(client)
         else:
             upstreamconfig = self.get_upstream_config(upstreamref) 
             if upstreamconfig: # connect on demand
@@ -130,7 +131,7 @@ class User(object):
     def client_message(self, client, line):
         """ Called when a message is received from a client. This message will usually be relayed to the relevant upstream, although it might be diverted to the cache instead. """
         print "[%s][%s][%s] CLIENT_RECV: %s" % (self.get_name(),client.upstreamref,client.resource,line)
-        if line.startswith("USER") or line.startswith("NICK"):
+        if line.startswith("USER") or line.startswith("NICK") or line.startswith("QUIT"):
             print "[%s][%s][%s] DROPPING_CLIENT_REGISTRATION: %s" % (self.get_name(),client.upstreamref,client.resource,line)
             return
 

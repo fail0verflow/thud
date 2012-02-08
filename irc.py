@@ -13,14 +13,56 @@ class Cache(object):
             code = int(code)
             if code in numeric_codes_reverse:
                 code = numeric_codes_reverse[int(code)]
-        print "CACHE -------- FROM %s TYPE %s ARGS %s" % (prefix, code,args)
+        #print "CACHE -------- FROM %s TYPE %s ARGS %s" % (prefix, code,args)
+        return (prefix,code,args)
+
+    def dispatch_server_message(self, message):
+        prefix, code, args = self.parse_message(message)
+        handler = getattr(self,'handle_server_%s' % code, None)
+        if handler:
+            return handler(message, prefix, code, args)
+        print "CACHE UNABLE TO DISPATCH UNKNOWN MESSAGE CODE: %s" % message
+        return None
+
     def process_server_message(self,upstream,message):
         """ Called with each message from the upstream server. The message should be parsed, analyzed and possibly added to the cache's data-stores."""
-        self.parse_message(message)
+        self.dispatch_server_message(message)
 
     def handle_client_message(self,client, message):
         """ Called with each message from the client. The message should be parsed and if the cache can handle the message it should send any responses necessary and return true. If the cache can't handle the message, return false."""
         return False
+    def attach_client(self, client):
+        """ Called when a client wishes to attach to the cache. Should send the welcome, motd and privmsg/query caches to him, as well as registering his resource for channel backlogs. """
+        for line in self.welcome:
+            client.sendLine(line)
+        for line in self.motd:
+            client.sendLine(line)
+        #TODO: send privmsgs and register resource
+
+    # WELCOME
+    def handle_server_RPL_WELCOME(self,message, prefix,code,args):
+        self.welcome = []
+        self.welcome.append(message)
+    def handle_server_welcome_messages(self,message, prefix,code,args):
+        self.welcome.append(message)
+    handle_server_RPL_YOURHOST=handle_server_welcome_messages
+    handle_server_RPL_CREATED =handle_server_welcome_messages
+    handle_server_RPL_MYINFO  =handle_server_welcome_messages
+    handle_server_RPL_ISUPPORT=handle_server_welcome_messages
+
+    # MOTD
+    def handle_server_RPL_MOTDSTART(self,message, prefix,code,args):
+        self.motd = []
+        self.motd.append(message)
+    def handle_server_RPL_MOTD(self,message, prefix,code,args):
+        self.motd.append(message)
+    def handle_server_RPL_ENDOFMOTD(self,message, prefix,code,args):
+        self.motd.append(message)
+
+    def handle_server_MODE(self,message, prefix,code,args):
+        self.mode = message
+
+
 
 
 # Numeric response codes
@@ -28,146 +70,149 @@ class Cache(object):
 # and: https://www.alien.net.au/irc/irc2numerics.html
 
 numeric_codes = {
-    'RFC_RPL_WELCOME'     : 001,
-    'RFC_RPL_YOURHOST'    : 002,
-    'RFC_RPL_CREATED'     : 003,
-    'RFC_RPL_MYINFO'      : 004,
-    'RFC_RPL_BOUNCE'      : 005,
+    'RPL_WELCOME'     : 001,
+    'RPL_YOURHOST'    : 002,
+    'RPL_CREATED'     : 003,
+    'RPL_MYINFO'      : 004,
+    'RPL_ISUPPORT'    : 005,
 
-    'RFC_RPL_USERHOST'    : 302,
-    'RFC_RPL_ISON'        : 303,
-    'RFC_RPL_AWAY'        : 301,
-    'RFC_RPL_UNAWAY'      : 305,
-    'RFC_RPL_NOWAWAY'     : 306,
+    'RPL_USERHOST'    : 302,
+    'RPL_ISON'        : 303,
+    'RPL_AWAY'        : 301,
+    'RPL_UNAWAY'      : 305,
+    'RPL_NOWAWAY'     : 306,
 
-    'RFC_RPL_WHOISUSER'   : 311,
-    'RFC_RPL_WHOISSERVER' : 312,
-    'RFC_RPL_WHOISOPERATOR'    : 313,
-    'RFC_RPL_WHOISIDLE'   : 317,
-    'RFC_RPL_ENDOFWHOIS'  : 318,
-    'RFC_RPL_WHOISCHANNELS' : 319,
-    'RFC_RPL_WHOWASUSER'  : 314,
-    'RFC_RPL_ENDOFWHOWAS' : 369,
-    'RFC_RPL_LIST'        : 322,
-    'RFC_RPL_LISTEND'     : 323,
-    'RFC_RPL_UNIQOPIS'    : 325,
-    'RFC_RPL_CHANNELMODEIS' : 324,
-    'RFC_RPL_NOTOPIC'     : 331,
-    'RFC_RPL_TOPIC'       : 332,
-    'RFC_RPL_INVITING'    : 341,
-    'RFC_RPL_SUMMONING'   : 342,
-    'RFC_RPL_INVITELIST'  : 346,
-    'RFC_RPL_ENDOFINVITELIST' : 347,
-    'RFC_RPL_EXCEPTLIST'  : 348,
-    'RFC_RPL_ENDOFEXCEPTLIST' : 349,
-    'RFC_RPL_VERSION'     : 351,
-    'RFC_RPL_WHOREPLY'    : 352,
-    'RFC_RPL_ENDOFWHO'    : 315,
-    'RFC_RPL_NAMEREPLY'   : 353,
-    'RFC_RPL_ENDOFNAMES'  : 366,
-    'RFC_RPL_LINKS'       : 364,
-    'RFC_RPL_ENDOFLINKS'  : 365,
-    'RFC_RPL_BANLIST'     : 367,
-    'RFC_RPL_ENDOFBANLIST'    : 368,
-    'RFC_RPL_INFO'        : 371,
-    'RFC_RPL_ENDOFINFO'   : 374,
-    'RFC_RPL_MOTDSTART'   : 375,
-    'RFC_RPL_MOTD'        : 372,
-    'RFC_RPL_ENDOFMOTD'   : 376,
-    'RFC_RPL_YOUREOPER'   : 381,
-    'RFC_RPL_REHASHING'   : 382,
-    'RFC_RPL_YOURSERVICE' : 383,
-    'RFC_RPL_TIME'        : 391,
-    'RFC_RPL_USERSTART'   : 392,
-    'RFC_RPL_USERS'       : 393,
-    'RFC_RPL_ENDOFUSERS'  : 394,
-    'RFC_RPL_NOUSERS'     : 395,
-    'RFC_RPL_TRACELINK'   : 200,
-    'RFC_RPL_TRACECONNECTING' : 201,
-    'RFC_RPL_TRACEHANDSHAKE' : 202,
-    'RFC_RPL_TRACEUNKNOWN' : 203,
-    'RFC_RPL_TRACEOPERATOR' : 204,
-    'RFC_RPL_TRACEUSER'   : 205,
-    'RFC_RPL_TRACESERVER' : 206,
-    'RFC_RPL_TRACESERVICE' : 207,
-    'RFC_RPL_TRACENEWTYPE' : 208,
-    'RFC_RPL_TRACECLASS'  : 209,
-    'RFC_RPL_TRACELOG'    : 261,
-    'RFC_RPL_TRACEEND'    : 262,
-    'RFC_RPL_STATSLINKINFO' : 211,
-    'RFC_RPL_STATSCOMMANDS' : 212,
-    'RFC_RPL_ENDOFSTATS'  : 219,
-    'RFC_RPL_STATSUPTIME' : 242,
-    'RFC_RPL_STATSOLINE'  : 243,
-    'RFC_RPL_UMODEIS'     : 221,
-    'RFC_RPL_SERGVLIST'   : 234,
-    'RFC_RPL_SERVLISTEND' : 235,
-    'RFC_RPL_STATSDLINE' : 250,
-    'RFC_RPL_LUSERCLIENT' : 251,
-    'RFC_RPL_LUSEROP'     : 252,
-    'RFC_RPL_LUSERUNKNOWN' : 253,
-    'RFC_RPL_LUSERCHANNELS' : 254,
-    'RFC_RPL_LUSERME'     : 255,
-    'RFC_RPL_LADMINME'    : 256,
-    'RFC_RPL_ADMINLOC1'   : 257,
-    'RFC_RPL_ADMINLOC2'   : 258,
-    'RFC_RPL_ADMINEMAIL'  : 259,
-    'RFC_RPL_TRYAGAIN'    : 263,
-    'RFC_RPL_LOCALUSERS'     : 265,
-    'RFC_RPL_GLOBALUSERS'     : 266,
-    'RFC_ERR_NOSUCHNICK'      : 401,
-    'RFC_ERR_NOSUCHSERVER'    : 402,
-    'RFC_ERR_NOSUCHCHANNEL'   : 403,
-    'RFC_ERR_CANNOTSENDTOCHAN': 404,
-    'RFC_ERR_TOOMANYCHANNELS' : 405,
-    'RFC_ERR_WASNOSUCHNICK'   : 406,
-    'RFC_ERR_TOOMANYTARGETS'  : 407,
-    'RFC_ERR_NOSUCHSERVICE'   : 408,
-    'RFC_ERR_NOORIGIN'        : 409,
-    'RFC_ERR_NORECIPIENT'     : 411,
-    'RFC_ERR_NOTEXTTOSEND'    : 412,
-    'RFC_ERR_NOTOPLEVEL'      : 413,
-    'RFC_ERR_WILDTOPLEVEL'    : 414,
-    'RFC_ERR_BADMASK'         : 415,
-    'RFC_ERR_UNKNOWNCOMMAND'  : 421,
-    'RFC_ERR_NOMOTD'          : 422,
-    'RFC_ERR_NOADMININFO'     : 423,
-    'RFC_ERR_FILEERROR'       : 424,
-    'RFC_ERR_NONICKNAMEGIVEN' : 431,
-    'RFC_ERR_ERRONEUSNICKNAME': 432,
-    'RFC_ERR_NICKNAMEINUSE'   : 433,
-    'RFC_ERR_NICKCOLLISION'   : 436,
-    'RFC_ERR_UNAVAILRESOURCE' : 437,
-    'RFC_ERR_USERNOTINCHANNEL': 441,
-    'RFC_ERR_NOTONCHANNEL'    : 442,
-    'RFC_ERR_USERONCHANNEL'   : 443,
-    'RFC_ERR_NOLOGIN'         : 444,
-    'RFC_ERR_SUMMONDISABLED'  : 445,
-    'RFC_ERR_USERSDISABLED'   : 446,
-    'RFC_ERR_NOTREGISTERED'   : 451,
-    'RFC_ERR_NEEDMOREPARAMS'  : 461,
-    'RFC_ERR_ALREADYREGISTERED':462,
-    'RFC_ERR_NOPERMFORHOST'   : 463,
-    'RFC_ERR_PASSWDMISMATCH'  : 464,
-    'RFC_ERR_YOUREBANNEDCREEP': 465,
-    'RFC_ERR_YOUWILLBEBANNED' : 466,
-    'RFC_ERR_KEYSET'          : 467,
-    'RFC_ERR_CHANNELISFULL'   : 471,
-    'RFC_ERR_UNKNOWNMODE'     : 472,
-    'RFC_ERR_INVITEONLYCHAN'  : 473,
-    'RFC_ERR_BANNEDFROMCHAN'  : 474,
-    'RFC_ERR_BADCHANNELKEY'    : 475,
-    'RFC_ERR_BADCHANMASK'     : 476,
-    'RFC_ERR_NOCHANMODES'     : 477,
-    'RFC_ERR_BANLISTFULL'     : 478,
-    'RFC_ERR_NOPRIVELEGES'    : 481,
-    'RFC_ERR_CHANOPRIVSNEEDED': 482,
-    'RFC_ERR_CANTKILLSERVER'  : 483,
-    'RFC_ERR_RESTRICTED'      : 484,
-    'RFC_ERR_UNIQOPPRIVSNEEDED':485,
-    'RFC_ERR_NOOPERHOST'      : 491,
-    'RFC_ERR_UMODEUNKNOWNFLAG': 501,
-    'RFC_ERR_USERSDONTMATCH'  : 502,
+    'RPL_WHOISUSER'   : 311,
+    'RPL_WHOISSERVER' : 312,
+    'RPL_WHOISOPERATOR'    : 313,
+    'RPL_WHOISIDLE'   : 317,
+    'RPL_ENDOFWHOIS'  : 318,
+    'RPL_WHOISCHANNELS' : 319,
+    'RPL_WHOWASUSER'  : 314,
+    'RPL_ENDOFWHOWAS' : 369,
+    'RPL_LIST'        : 322,
+    'RPL_LISTEND'     : 323,
+    'RPL_UNIQOPIS'    : 325,
+    'RPL_CHANNELMODEIS' : 324,
+    'RPL_NOTOPIC'     : 331,
+    'RPL_TOPIC'       : 332,
+    'RPL_INVITING'    : 341,
+    'RPL_SUMMONING'   : 342,
+    'RPL_INVITELIST'  : 346,
+    'RPL_ENDOFINVITELIST' : 347,
+    'RPL_EXCEPTLIST'  : 348,
+    'RPL_ENDOFEXCEPTLIST' : 349,
+    'RPL_VERSION'     : 351,
+    'RPL_WHOREPLY'    : 352,
+    'RPL_ENDOFWHO'    : 315,
+    'RPL_NAMEREPLY'   : 353,
+    'RPL_ENDOFNAMES'  : 366,
+    'RPL_LINKS'       : 364,
+    'RPL_ENDOFLINKS'  : 365,
+    'RPL_BANLIST'     : 367,
+    'RPL_ENDOFBANLIST'    : 368,
+    'RPL_INFO'        : 371,
+    'RPL_ENDOFINFO'   : 374,
+    'RPL_MOTDSTART'   : 375,
+    'RPL_MOTD'        : 372,
+    'RPL_ENDOFMOTD'   : 376,
+    'RPL_YOUREOPER'   : 381,
+    'RPL_REHASHING'   : 382,
+    'RPL_YOURSERVICE' : 383,
+    'RPL_TIME'        : 391,
+    'RPL_USERSTART'   : 392,
+    'RPL_USERS'       : 393,
+    'RPL_ENDOFUSERS'  : 394,
+    'RPL_NOUSERS'     : 395,
+    'RPL_TRACELINK'   : 200,
+    'RPL_TRACECONNECTING' : 201,
+    'RPL_TRACEHANDSHAKE' : 202,
+    'RPL_TRACEUNKNOWN' : 203,
+    'RPL_TRACEOPERATOR' : 204,
+    'RPL_TRACEUSER'   : 205,
+    'RPL_TRACESERVER' : 206,
+    'RPL_TRACESERVICE' : 207,
+    'RPL_TRACENEWTYPE' : 208,
+    'RPL_TRACECLASS'  : 209,
+    'RPL_TRACELOG'    : 261,
+    'RPL_TRACEEND'    : 262,
+    'RPL_STATSLINKINFO' : 211,
+    'RPL_STATSCOMMANDS' : 212,
+    'RPL_ENDOFSTATS'  : 219,
+    'RPL_STATSUPTIME' : 242,
+    'RPL_STATSOLINE'  : 243,
+    'RPL_UMODEIS'     : 221,
+    'RPL_SERGVLIST'   : 234,
+    'RPL_SERVLISTEND' : 235,
+    'RPL_STATSDLINE' : 250,
+    'RPL_LUSERCLIENT' : 251,
+    'RPL_LUSEROP'     : 252,
+    'RPL_LUSERUNKNOWN' : 253,
+    'RPL_LUSERCHANNELS' : 254,
+    'RPL_LUSERME'     : 255,
+    'RPL_LADMINME'    : 256,
+    'RPL_ADMINLOC1'   : 257,
+    'RPL_ADMINLOC2'   : 258,
+    'RPL_ADMINEMAIL'  : 259,
+    'RPL_TRYAGAIN'    : 263,
+    'RPL_LOCALUSERS'     : 265,
+    'RPL_GLOBALUSERS'     : 266,
+    'ERR_NOSUCHNICK'      : 401,
+    'ERR_NOSUCHSERVER'    : 402,
+    'ERR_NOSUCHCHANNEL'   : 403,
+    'ERR_CANNOTSENDTOCHAN': 404,
+    'ERR_TOOMANYCHANNELS' : 405,
+    'ERR_WASNOSUCHNICK'   : 406,
+    'ERR_TOOMANYTARGETS'  : 407,
+    'ERR_NOSUCHSERVICE'   : 408,
+    'ERR_NOORIGIN'        : 409,
+    'ERR_NORECIPIENT'     : 411,
+    'ERR_NOTEXTTOSEND'    : 412,
+    'ERR_NOTOPLEVEL'      : 413,
+    'ERR_WILDTOPLEVEL'    : 414,
+    'ERR_BADMASK'         : 415,
+    'ERR_UNKNOWNCOMMAND'  : 421,
+    'ERR_NOMOTD'          : 422,
+    'ERR_NOADMININFO'     : 423,
+    'ERR_FILEERROR'       : 424,
+    'ERR_NONICKNAMEGIVEN' : 431,
+    'ERR_ERRONEUSNICKNAME': 432,
+    'ERR_NICKNAMEINUSE'   : 433,
+    'ERR_NICKCOLLISION'   : 436,
+    'ERR_UNAVAILRESOURCE' : 437,
+    'ERR_USERNOTINCHANNEL': 441,
+    'ERR_NOTONCHANNEL'    : 442,
+    'ERR_USERONCHANNEL'   : 443,
+    'ERR_NOLOGIN'         : 444,
+    'ERR_SUMMONDISABLED'  : 445,
+    'ERR_USERSDISABLED'   : 446,
+    'ERR_NOTREGISTERED'   : 451,
+    'ERR_NEEDMOREPARAMS'  : 461,
+    'ERR_ALREADYREGISTERED':462,
+    'ERR_NOPERMFORHOST'   : 463,
+    'ERR_PASSWDMISMATCH'  : 464,
+    'ERR_YOUREBANNEDCREEP': 465,
+    'ERR_YOUWILLBEBANNED' : 466,
+    'ERR_KEYSET'          : 467,
+    'ERR_CHANNELISFULL'   : 471,
+    'ERR_UNKNOWNMODE'     : 472,
+    'ERR_INVITEONLYCHAN'  : 473,
+    'ERR_BANNEDFROMCHAN'  : 474,
+    'ERR_BADCHANNELKEY'    : 475,
+    'ERR_BADCHANMASK'     : 476,
+    'ERR_NOCHANMODES'     : 477,
+    'ERR_BANLISTFULL'     : 478,
+    'ERR_NOPRIVELEGES'    : 481,
+    'ERR_CHANOPRIVSNEEDED': 482,
+    'ERR_CANTKILLSERVER'  : 483,
+    'ERR_RESTRICTED'      : 484,
+    'ERR_UNIQOPPRIVSNEEDED':485,
+    'ERR_NOOPERHOST'      : 491,
+    'ERR_UMODEUNKNOWNFLAG': 501,
+    'ERR_USERSDONTMATCH'  : 502,
 }
 numeric_codes_reverse = {v: k for k,v in numeric_codes.items() }
+# merge into module:
+globals().update(numeric_codes)
+
 # vim: tabstop=4 expandtab shiftwidth=4 softtabstop=4
