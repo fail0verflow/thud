@@ -1,7 +1,17 @@
+class Channel(object):
+    def __init__(self,name):
+        self.init = []
+        self.name = name
+        self.topic = ""
+        self.who = []
+        self.mode = []
 
 class Cache(object):
     def __init__(self):
-        pass
+        self.welcome = []
+        self.motd = []
+        self.mode = []
+        self.channels = {}
 
     def parse_message(self, message):
         prefix = ""
@@ -9,6 +19,11 @@ class Cache(object):
             prefix,code,args = message.split(" ",2)
         else:
             code,args = message.split(" ",1)
+        if " :" in args:
+            args,d,last_arg = args.partition(" :")
+            args = args.split(" ") + [d + last_arg]
+        else:
+            args = args.split(" ")
         if code.isdigit():
             code = int(code)
             if code in numeric_codes_reverse:
@@ -30,13 +45,23 @@ class Cache(object):
 
     def handle_client_message(self,client, message):
         """ Called with each message from the client. The message should be parsed and if the cache can handle the message it should send any responses necessary and return true. If the cache can't handle the message, return false."""
+        prefix, code, args = self.parse_message(message)
+        if code == "JOIN" and args[0] in self.channels:
+            client.sendLine("\n".join(self.channels[args[0]].init))
+            client.sendLine(self.channels[args[0]].topic)
+            return True
+        elif code == "MODE" and args[0] in self.channels and len(self.channels[args[0]].mode):
+            client.sendLine("\n".join(self.channels[args[0]].mode))
+            return True
+        elif code == "WHO" and args[0] in self.channels and len(self.channels[args[0]].who):
+            client.sendLine("\n".join(self.channels[args[0]].who))
+            return True
         return False
     def attach_client(self, client):
         """ Called when a client wishes to attach to the cache. Should send the welcome, motd and privmsg/query caches to him, as well as registering his resource for channel backlogs. """
-        for line in self.welcome:
-            client.sendLine(line)
-        for line in self.motd:
-            client.sendLine(line)
+        client.sendLine("\n".join(self.welcome))
+        client.sendLine("\n".join(self.motd))
+        client.sendLine(self.mode)
         #TODO: send privmsgs and register resource
 
     # WELCOME
@@ -61,6 +86,33 @@ class Cache(object):
 
     def handle_server_MODE(self,message, prefix,code,args):
         self.mode = message
+
+    # CHANNEL JOIN
+    def handle_server_JOIN(self, message, prefix, code, args):
+        name = args[0]
+        self.channels[name] = Channel(name)
+        self.channels[name].init.append(message)
+    def handle_server_RPL_NAMREPLY(self,message,prefix,code,args):
+        name = args[1] in ["=","*","@"] and args[2] or args[1]
+        self.channels[name].init.append(message)
+    def handle_server_RPL_ENDOFNAMES(self,message,prefix,code,args):
+        self.channels[args[1]].init.append(message)
+
+    def handle_server_TOPIC(self,message,prefix,code,args):
+        self.channels[args[0]].topic = message
+
+    # CHANNEL MODE
+    def handle_server_RPL_CHANNELMODEIS(self,message,prefix,code,args):
+        self.channels[args[1]].mode = [message]
+    def handle_server_RPL_CREATIONTIME(self,message,prefix,code,args):
+        self.channels[args[1]].mode.append(message)
+
+    # CHANNEL WHO
+    def handle_server_RPL_WHOREPLY(self,message,prefix,code,args):
+        self.channels[args[1]].who.append(message)
+    handle_server_RPL_ENDOFWHO = handle_server_RPL_WHOREPLY
+
+
 
 
 
@@ -94,6 +146,7 @@ numeric_codes = {
     'RPL_LISTEND'     : 323,
     'RPL_UNIQOPIS'    : 325,
     'RPL_CHANNELMODEIS' : 324,
+    'RPL_CREATIONTIME' : 329,
     'RPL_NOTOPIC'     : 331,
     'RPL_TOPIC'       : 332,
     'RPL_INVITING'    : 341,
@@ -105,7 +158,7 @@ numeric_codes = {
     'RPL_VERSION'     : 351,
     'RPL_WHOREPLY'    : 352,
     'RPL_ENDOFWHO'    : 315,
-    'RPL_NAMEREPLY'   : 353,
+    'RPL_NAMREPLY'   : 353,
     'RPL_ENDOFNAMES'  : 366,
     'RPL_LINKS'       : 364,
     'RPL_ENDOFLINKS'  : 365,
