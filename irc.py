@@ -41,6 +41,7 @@ class Cache(object):
 
     def process_server_message(self,upstream,message):
         """ Called with each message from the upstream server. The message should be parsed, analyzed and possibly added to the cache's data-stores."""
+        print "CACHE RECEIVED: %s" % message
         self.dispatch_server_message(message)
 
     def handle_client_message(self,client, message):
@@ -63,6 +64,14 @@ class Cache(object):
         client.sendLine("\n".join(self.motd))
         client.sendLine(self.mode)
         #TODO: send privmsgs and register resource
+        
+        #Not sure we should be pushing all these channels out, but hey why not:
+        for channel in self.channels.values():
+            client.sendLine("\n".join(channel.init))
+            client.sendLine("\n".join(channel.mode))
+            client.sendLine("\n".join(channel.who))
+            client.sendLine("\n".join(channel.topic))
+
 
     # WELCOME
     def handle_server_RPL_WELCOME(self,message, prefix,code,args):
@@ -103,6 +112,7 @@ class Cache(object):
 
     # CHANNEL MODE
     def handle_server_RPL_CHANNELMODEIS(self,message,prefix,code,args):
+        print "CACHEING CHANNEL MODE: %s" % message
         self.channels[args[1]].mode = [message]
     def handle_server_RPL_CREATIONTIME(self,message,prefix,code,args):
         self.channels[args[1]].mode.append(message)
