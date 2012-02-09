@@ -1,4 +1,4 @@
-from collections import deque
+from collections import deque, OrderedDict
 from datetime import datetime
 
 class Channel(object):
@@ -76,7 +76,7 @@ class Cache(object):
             client.sendLine("\n".join(channel.mode))
             client.sendLine("\n".join(channel.who))
             client.sendLine("\n".join(channel.topic))
-            client.sendline("\n".join(channel.messages.values()))
+            client.sendLine("\n".join(OrderedDict(channel.messages).values()))
 
 
     # WELCOME
