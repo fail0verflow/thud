@@ -76,6 +76,7 @@ class Cache(object):
             client.sendLine("\n".join(channel.mode))
             client.sendLine("\n".join(channel.who))
             client.sendLine("\n".join(channel.topic))
+            client.sendline("\n".join(channel.messages.values()))
 
 
     # WELCOME
@@ -103,14 +104,10 @@ class Cache(object):
 
     # CHANNEL JOIN
     def handle_server_JOIN(self, message, prefix, code, args):
-        print "\n\n\n\t----> SERVER JOIN MESSAGE: %s" % message
-        print args
         name = args[0]
         self.channels[name] = Channel(name)
         self.channels[name].init.append(message)
     def handle_server_RPL_NAMREPLY(self,message,prefix,code,args):
-        print "\n\n\n\t----> SERVER RPL_NAME MESSAGE: %s" % message
-        print self.channels
         name = args[1] in ["=","*","@"] and args[2] or args[1]
         self.channels[name].init.append(message)
     def handle_server_RPL_ENDOFNAMES(self,message,prefix,code,args):
@@ -139,7 +136,6 @@ class Cache(object):
     def handle_server_PRIVMSG(self,message,prefix,code,args):
         if args[0] in self.channels:
             self.channels[args[0]].messages.append((datetime.now(),message))
-            print "MESSAGE BACKLOG FOR CHANNEL %s: \n\t%s" % (args[0],self.channels[args[0]].messages)
 
 
 
