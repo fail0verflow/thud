@@ -1,17 +1,22 @@
+from collections import deque
+from datetime import datetime
+
 class Channel(object):
-    def __init__(self,name):
+    def __init__(self,name, max_messages=30):
         self.init = []
         self.name = name
         self.topic = ""
         self.who = []
         self.mode = []
+        self.messages = deque(maxlen=max_messages)
 
 class Cache(object):
-    def __init__(self):
+    def __init__(self,upstream):
         self.welcome = []
         self.motd = []
         self.mode = []
         self.channels = {}
+        self.upstream = upstream
 
     def parse_message(self, message):
         prefix = ""
@@ -19,9 +24,9 @@ class Cache(object):
             prefix,code,args = message.split(" ",2)
         else:
             code,args = message.split(" ",1)
-        if " :" in args:
-            args,d,last_arg = args.partition(" :")
-            args = args.split(" ") + [d + last_arg]
+        if ":" in args:
+            args,d,last_arg = args.partition(":")
+            args = args.split() + [last_arg]
         else:
             args = args.split(" ")
         if code.isdigit():
@@ -62,7 +67,7 @@ class Cache(object):
         """ Called when a client wishes to attach to the cache. Should send the welcome, motd and privmsg/query caches to him, as well as registering his resource for channel backlogs. """
         client.sendLine("\n".join(self.welcome))
         client.sendLine("\n".join(self.motd))
-        client.sendLine(self.mode)
+        client.sendLine("\n".join(self.mode))
         #TODO: send privmsgs and register resource
         
         #Not sure we should be pushing all these channels out, but hey why not:
@@ -98,10 +103,14 @@ class Cache(object):
 
     # CHANNEL JOIN
     def handle_server_JOIN(self, message, prefix, code, args):
+        print "\n\n\n\t----> SERVER JOIN MESSAGE: %s" % message
+        print args
         name = args[0]
         self.channels[name] = Channel(name)
         self.channels[name].init.append(message)
     def handle_server_RPL_NAMREPLY(self,message,prefix,code,args):
+        print "\n\n\n\t----> SERVER RPL_NAME MESSAGE: %s" % message
+        print self.channels
         name = args[1] in ["=","*","@"] and args[2] or args[1]
         self.channels[name].init.append(message)
     def handle_server_RPL_ENDOFNAMES(self,message,prefix,code,args):
@@ -122,8 +131,15 @@ class Cache(object):
         self.channels[args[1]].who.append(message)
     handle_server_RPL_ENDOFWHO = handle_server_RPL_WHOREPLY
 
+    # PING
+    def handle_server_PING(self,message,prefix,code,args):
+        self.upstream.sendLine("PONG %s" % args[0])
 
-
+    # PRIVMSG
+    def handle_server_PRIVMSG(self,message,prefix,code,args):
+        if args[0] in self.channels:
+            self.channels[args[0]].messages.append((datetime.now(),message))
+            print "MESSAGE BACKLOG FOR CHANNEL %s: \n\t%s" % (args[0],self.channels[args[0]].messages)
 
 
 

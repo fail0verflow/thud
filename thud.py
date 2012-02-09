@@ -27,7 +27,9 @@ class UpstreamConfig(object):
     def get_autoconnect(self):
         return self.config.get("autoconnect",False)
     def get_channel_configs(self):
-        return {c["name"].lower(): ChannelConfig(c,self) for c in self.config['channels']}
+        if "channels" in self.config:
+            return {c["name"].lower(): ChannelConfig(c,self) for c in self.config['channels']}
+        return {}
 
 class ChannelConfig(object):
     def __init__(self,config,upstreamconfig):
@@ -82,7 +84,7 @@ class User(object):
         self.upstream_connections[upstream.config.get_ref()] = upstream
         upstream.register_callback(CALLBACK_MESSAGE, self.upstream_message)
         upstream.register_callback(CALLBACK_DISCONNECTED, self.upstream_disconnected)
-        upstream.cache = irc.Cache()
+        upstream.cache = irc.Cache(upstream)
         upstream.register_callback(CALLBACK_MESSAGE,upstream.cache.process_server_message)
         
         # we need to do a USER and NICK command to the server here.
@@ -154,7 +156,7 @@ class User(object):
             return
 
         if client.upstreamref in self.upstream_connections:
-            if client.upstream.cache.handle_client_message(client,line):
+            if client.upstream and client.upstream.cache.handle_client_message(client,line):
                 return
             self.upstream_connections[client.upstreamref].sendLine(line)
         else:

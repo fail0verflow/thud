@@ -5,6 +5,9 @@ nick: thudtester
 
 upstreams: 
 
+    - ref: efnet
+      uri: irc://irc.efnet.net:6667
+      autoconnect: true
     - ref: freenode
       uri: ircs://irc.freenode.net:6697
       autoconnect: false
