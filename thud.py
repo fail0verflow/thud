@@ -30,6 +30,8 @@ class UpstreamConfig(object):
         if "channels" in self.config:
             return {c["name"].lower(): ChannelConfig(c,self) for c in self.config['channels']}
         return {}
+    def get_password(self):
+        return self.config.get("password","")
 
 class ChannelConfig(object):
     def __init__(self,config,upstreamconfig):
@@ -88,6 +90,8 @@ class User(object):
         upstream.register_callback(CALLBACK_MESSAGE,upstream.cache.process_server_message)
         
         # we need to do a USER and NICK command to the server here.
+        if upstream.config.get_password(): 
+            self.upstream_send(upstream,"PASS %s" % upstream.config.get_password())
         self.upstream_send(upstream,"NICK %s" % upstream.config.get_nick())
         self.upstream_send(upstream,"USER %s 0 * :%s" % (upstream.config.get_nick(), upstream.config.get_realname()))
         # we should join all channels:
