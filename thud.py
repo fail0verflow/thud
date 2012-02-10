@@ -155,7 +155,7 @@ class User(object):
     def client_message(self, client, line):
         """ Called when a message is received from a client. This message will usually be relayed to the relevant upstream, although it might be diverted to the cache instead. """
         print "[%s][%s][%s] CLIENT_RECV: %s" % (self.get_name(),client.upstreamref,client.resource,line)
-        if line.startswith("USER") or line.startswith("NICK") or line.startswith("QUIT"):
+        if line.startswith("USER") or line.startswith("QUIT"):
             print "[%s][%s][%s] DROPPING_CLIENT_REGISTRATION: %s" % (self.get_name(),client.upstreamref,client.resource,line)
             return
 
