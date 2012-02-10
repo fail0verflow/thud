@@ -16,7 +16,9 @@ class Cache(object):
         self.motd = []
         self.mode = []
         self.channels = {}
+        self.queries = []
         self.upstream = upstream
+        self.nick = None
 
     def parse_message(self, message):
         prefix = ""
@@ -52,7 +54,17 @@ class Cache(object):
     def handle_client_message(self,client, message):
         """ Called with each message from the client. The message should be parsed and if the cache can handle the message it should send any responses necessary and return true. If the cache can't handle the message, return false."""
         prefix, code, args = self.parse_message(message)
-        if code == "JOIN" and args[0] in self.channels:
+        if code == "USER":
+            print "REGISTERING CLIENT: %s" % (message)
+            client.sendLine("\n".join(self.welcome))
+            client.sendLine("\n".join(self.motd))
+            client.sendLine("\n".join(self.mode))
+            client.sendLine("\n".join(self.queries))
+            #TODO: send privmsgs and register resource
+            return True
+        elif code == "QUIT":
+            return True
+        elif code == "JOIN" and args[0] in self.channels:
             client.sendLine("\n".join(self.channels[args[0]].init))
             client.sendLine(self.channels[args[0]].topic)
             return True
@@ -65,19 +77,15 @@ class Cache(object):
         return False
     def attach_client(self, client):
         """ Called when a client wishes to attach to the cache. Should send the welcome, motd and privmsg/query caches to him, as well as registering his resource for channel backlogs. """
-        client.sendLine("\n".join(self.welcome))
-        client.sendLine("\n".join(self.motd))
-        client.sendLine("\n".join(self.mode))
-        #TODO: send privmsgs and register resource
-        
         #Not sure we should be pushing all these channels out, but hey why not:
         for channel in self.channels.values():
+            print "PUSHING CHANNEL: %s" % channel.name
             client.sendLine("\n".join(channel.init))
             client.sendLine("\n".join(channel.mode))
             client.sendLine("\n".join(channel.who))
             client.sendLine("\n".join(channel.topic))
+            print "BACKLOGGING: \n\t%s" % "\n\t".join(OrderedDict(channel.messages).values())
             client.sendLine("\n".join(OrderedDict(channel.messages).values()))
-
 
     # WELCOME
     def handle_server_RPL_WELCOME(self,message, prefix,code,args):
@@ -132,10 +140,16 @@ class Cache(object):
     def handle_server_PING(self,message,prefix,code,args):
         self.upstream.sendLine("PONG %s" % args[0])
 
+    # NICK
+    def handle_server_NICK(self,message,prefix,code,args):
+        self.nick = args[0]
+
     # PRIVMSG
     def handle_server_PRIVMSG(self,message,prefix,code,args):
         if args[0] in self.channels:
             self.channels[args[0]].messages.append((datetime.now(),message))
+        if args[0] == self.nick:
+            self.queries.append(message)
 
 
 

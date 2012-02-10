@@ -11,6 +11,7 @@ import glob
 import uuid
 
 import irc
+import time
 
 class UpstreamConfig(object):
     def __init__(self,config,user):
@@ -155,16 +156,14 @@ class User(object):
     def client_message(self, client, line):
         """ Called when a message is received from a client. This message will usually be relayed to the relevant upstream, although it might be diverted to the cache instead. """
         print "[%s][%s][%s] CLIENT_RECV: %s" % (self.get_name(),client.upstreamref,client.resource,line)
-        if line.startswith("USER") or line.startswith("QUIT"):
-            print "[%s][%s][%s] DROPPING_CLIENT_REGISTRATION: %s" % (self.get_name(),client.upstreamref,client.resource,line)
+        
+        if not client.upstreamref in self.upstream_connections:
+            print "---> PUTTING OFF FOR 1 SECOND TO GIVE THE UPSTREAM A CHANCE TO COMPLETE CONNECTION!"
+            reactor.callLater(1, self.client_message, client, line)
             return
-
-        if client.upstreamref in self.upstream_connections:
-            if client.upstream and client.upstream.cache.handle_client_message(client,line):
-                return
-            self.upstream_connections[client.upstreamref].sendLine(line)
-        else:
-            print "[%s][%s][%s] ORPHAN_CLIENT_MSG: %s " % (self.get_name(),client.upstreamref,client.resource,line)
+        if client.upstream.cache.handle_client_message(client,line):
+            return
+        self.upstream_connections[client.upstreamref].sendLine(line)
     def client_disconnected(self, client):
         """ Called when a client disconnectes for this user."""
         print "[%s][%s] CLIENT_DISCONNECTED" % (self.get_name(),client.upstreamref)
