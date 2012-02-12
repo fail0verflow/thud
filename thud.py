@@ -150,6 +150,7 @@ class User(object):
                 def __connected(upstream):
                     res = self.upstream_connected(upstream)
                     client.upstream = res
+                    client.upstream.cache.attach_client(client)
                     return res
                 d.addCallback(__connected)
             else:
