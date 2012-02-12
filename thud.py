@@ -44,9 +44,11 @@ class ChannelConfig(object):
         return self.config.get("key","")
 
 
-class AuthenticationFailed(Exception):
+class ThudException(Exception):
     pass
-class NoSuchUpstream(Exception):
+class AuthenticationFailed(ThudException):
+    pass
+class NoSuchUpstream(ThudException):
     pass
 
 class User(object):
@@ -213,12 +215,14 @@ class IRCBouncer:
         return d
 
     def connect_client(self, client, token):
+        if not ":" in token:
+            raise ThudException("Invalid Token!")
         username,sep,token = token.partition(":")
         username = username.lower()
         if username in self.users:
             self.users[username].client_connected(client, token)
         else:
-            print "CLIENT CONNECTED WITH UNKNOWN USERNAME: %s" % username
+            raise AuthenticationFailed("CLIENT CONNECTED WITH UNKNOWN USERNAME: %s" % username)
 
 
 
@@ -256,6 +260,11 @@ class IRCClientConnection(CallBackLineReceiver):
             except AuthenticationFailed:
                 print "BAD PASSWORD FOR CLIENT"
                 self.sendLine(":THUD 464 :Password is invalid!")
+                self.transport.loseConnection()
+                return
+            except ThudException,e:
+                print "SOMETHING WENT AWRY!"
+                print e
                 self.transport.loseConnection()
                 return
             self.unregister_callback(CALLBACK_MESSAGE,self.lineReceived_filter_callback)
