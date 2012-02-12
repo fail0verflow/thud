@@ -17,30 +17,39 @@ class UpstreamConfig(object):
     def __init__(self,config,user):
         self.config = config
         self.user = user
-    def get_uri(self):
+    @property
+    def uri(self):
         return self.config["uri"]
-    def get_ref(self):
+    @property
+    def ref(self):
         return self.config["ref"]
-    def get_nick(self):
-        return self.config.get("nick",self.user.get_nick())
-    def get_realname(self):
-        return self.config.get("realname",self.user.get_realname())
-    def get_autoconnect(self):
+    @property
+    def nick(self):
+        return self.config.get("nick",self.user.nick)
+    @property
+    def realname(self):
+        return self.config.get("realname",self.user.realname)
+    @property
+    def autoconnect(self):
         return self.config.get("autoconnect",False)
-    def get_channel_configs(self):
+    @property
+    def channel_configs(self):
         if "channels" in self.config:
             return {c["name"].lower(): ChannelConfig(c,self) for c in self.config['channels']}
         return {}
-    def get_password(self):
+    @property
+    def password(self):
         return self.config.get("password","")
 
 class ChannelConfig(object):
     def __init__(self,config,upstreamconfig):
         self.config = config
         self.upstreamconfig = upstreamconfig
-    def get_name(self):
+    @property
+    def name(self):
         return self.config["name"]
-    def get_key(self):
+    @property
+    def key(self):
         return self.config.get("key","")
 
 
@@ -64,61 +73,67 @@ class User(object):
     def save_config(self):
         with open(self.configfile,'wt') as f:
             f.write(yaml.dump(config))
-    def get_name(self):
+    @property
+    def name(self):
         return self.config.get('name').lower()
-    def get_realname(self):
-        return self.config.get('realname',self.get_name())
-    def get_upstream_configs(self):
+    @property
+    def realname(self):
+        return self.config.get('realname',self.name)
+    @property
+    def upstream_configs(self):
         return {c["ref"].lower(): UpstreamConfig(c,self) for c in self.config['upstreams']}
     def get_upstream_config(self, ref):
-        return self.get_upstream_configs().get(ref,None)
-    def get_nick(self):
+        return self.upstream_configs.get(ref,None)
+    @property
+    def nick(self):
         return self.config["nick"]
-    def get_realname(self):
-        return self.config.get("realname",self.get_name())
-    def get_password(self):
+    @property
+    def realname(self):
+        return self.config.get("realname",self.name)
+    @property
+    def password(self):
         return self.config.get("password")
 
     def authenticate_client(self, password):
         """ Called when a downstream client connects and is attempting to authenticate """
-        return pwd_context.verify(password, self.get_password())
+        return pwd_context.verify(password, self.password)
 
     def upstream_connected(self, upstream):
         """ Called when one of the upstream connections has successfully connected to the upstream server """
-        print "[%s] UPSTREAM CONNECTED FOR %s" % (self.get_name(),upstream.config.get_uri())
-        self.upstream_connections[upstream.config.get_ref()] = upstream
+        print "[%s] UPSTREAM CONNECTED FOR %s" % (self.name,upstream.config.uri)
+        self.upstream_connections[upstream.config.ref] = upstream
         upstream.register_callback(CALLBACK_MESSAGE, self.upstream_message)
         upstream.register_callback(CALLBACK_DISCONNECTED, self.upstream_disconnected)
         upstream.cache = irc.Cache(upstream)
         upstream.register_callback(CALLBACK_MESSAGE,upstream.cache.process_server_message)
         
         # we need to do a USER and NICK command to the server here.
-        if upstream.config.get_password(): 
-            self.upstream_send(upstream,"PASS %s" % upstream.config.get_password())
-        self.upstream_send(upstream,"NICK %s" % upstream.config.get_nick())
-        self.upstream_send(upstream,"USER %s 0 * :%s" % (upstream.config.get_nick(), upstream.config.get_realname()))
+        if upstream.config.password: 
+            self.upstream_send(upstream,"PASS %s" % upstream.config.password)
+        self.upstream_send(upstream,"NICK %s" % upstream.config.nick)
+        self.upstream_send(upstream,"USER %s 0 * :%s" % (upstream.config.nick, upstream.config.realname))
         # we should join all channels:
-        for channel in upstream.config.get_channel_configs().values():
-            self.upstream_send(upstream,"JOIN %s %s" % (channel.get_name(), channel.get_key()))
-            self.upstream_send(upstream,"MODE %s" % channel.get_name())
-            self.upstream_send(upstream,"WHO %s" % channel.get_name())
+        for channel in upstream.config.channel_configs.values():
+            self.upstream_send(upstream,"JOIN %s %s" % (channel.name, channel.key))
+            self.upstream_send(upstream,"MODE %s" % channel.name)
+            self.upstream_send(upstream,"WHO %s" % channel.name)
 
         return upstream
     def upstream_send(self, upstream, line):
         """ Convenience function used to send messages to an upstream server """
-        print "[%s][%s] UPSTREAM_SEND: %s" % (self.get_name(),upstream.config.get_uri(),line)
+        print "[%s][%s] UPSTREAM_SEND: %s" % (self.name,upstream.config.uri,line)
         upstream.sendLine(line)
     def upstream_message(self, upstream, line):
         """ Called when a message is received from an upstream connection. This message will usually be delivered to all clients, and may also be cached."""
-        print "[%s][%s] UPSTREAM_RECV: %s" % (self.get_name(),upstream.config.get_uri(),line)
+        print "[%s][%s] UPSTREAM_RECV: %s" % (self.name,upstream.config.uri,line)
         for resource,client in self.clients.items():
-            if client.upstreamref == upstream.config.get_ref():
+            if client.upstreamref == upstream.config.ref:
                 client.sendLine(line)
 
     def upstream_disconnected(self, upstream):
         """ Called when one of the upstream connections disconnects for whatever reason """
-        del self.upstream_connections[upstream.config.get_ref()]
-        print "[%s] UPSTREAM DISCONNECTED FOR %s" % (self.get_name(),upstream.config.get_uri())
+        del self.upstream_connections[upstream.config.ref]
+        print "[%s] UPSTREAM DISCONNECTED FOR %s" % (self.name,upstream.config.uri)
         return upstream
 
     def client_connected(self, client, token):
@@ -145,7 +160,7 @@ class User(object):
         else:
             upstreamconfig = self.get_upstream_config(upstreamref) 
             if upstreamconfig: # connect on demand
-                print "[%s] ON DEMAND CONNECTING TO UPSTREAM %s" % (self.get_name(),upstreamconfig.get_uri())
+                print "[%s] ON DEMAND CONNECTING TO UPSTREAM %s" % (self.name,upstreamconfig.uri)
                 d = self.bouncer.connect_upstream(upstreamconfig)
                 def __connected(upstream):
                     res = self.upstream_connected(upstream)
@@ -158,7 +173,7 @@ class User(object):
         return client
     def client_message(self, client, line):
         """ Called when a message is received from a client. This message will usually be relayed to the relevant upstream, although it might be diverted to the cache instead. """
-        print "[%s][%s][%s] CLIENT_RECV: %s" % (self.get_name(),client.upstreamref,client.resource,line)
+        print "[%s][%s][%s] CLIENT_RECV: %s" % (self.name,client.upstreamref,client.resource,line)
         
         if not client.upstreamref in self.upstream_connections:
             print "---> PUTTING OFF FOR 1 SECOND TO GIVE THE UPSTREAM A CHANCE TO COMPLETE CONNECTION!"
@@ -169,7 +184,7 @@ class User(object):
         self.upstream_connections[client.upstreamref].sendLine(line)
     def client_disconnected(self, client):
         """ Called when a client disconnectes for this user."""
-        print "[%s][%s] CLIENT_DISCONNECTED" % (self.get_name(),client.upstreamref)
+        print "[%s][%s] CLIENT_DISCONNECTED" % (self.name,client.upstreamref)
         del self.clients[client.resource]
 
 
@@ -183,18 +198,18 @@ class IRCBouncer:
 
     def process_user_config(self, config):
         user = User(self,config)
-        print "PROCESSING USER CONFIG FOR %s" % user.get_name()
-        self.users[user.get_name()] = user
-        for ref, upstreamconfig in user.get_upstream_configs().items():
-            print "\t", ref, upstreamconfig.get_uri(), upstreamconfig.get_autoconnect() and "AUTOCONNECT" or "ONDEMAND"
-            if upstreamconfig.get_autoconnect():
+        print "PROCESSING USER CONFIG FOR %s" % user.name
+        self.users[user.name] = user
+        for ref, upstreamconfig in user.upstream_configs.items():
+            print "\t", ref, upstreamconfig.uri, upstreamconfig.autoconnect and "AUTOCONNECT" or "ONDEMAND"
+            if upstreamconfig.autoconnect:
                 d = self.connect_upstream(upstreamconfig)
                 def __connected(upstream):
                     return upstream.config.user.upstream_connected(upstream)
                 d.addCallback(__connected)
 
     def connect_upstream(self, upstreamconfig):
-        uri = upstreamconfig.get_uri()
+        uri = upstreamconfig.uri
         m = re.match("(?:(?P<proto>[a-zA-i0-9]+)://)?(?P<host>[a-zA-Z0-9.-]+)(?:[:](?P<port>[0-9]+))?/?",uri)
         parts = m.groupdict()
         protocol = parts.get("proto","irc").lower()
