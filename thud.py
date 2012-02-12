@@ -11,7 +11,6 @@ import glob
 import uuid
 
 import irc
-import time
 
 class UpstreamConfig(object):
     def __init__(self,config,user):
