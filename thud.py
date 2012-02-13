@@ -1,5 +1,5 @@
 #!/usr/bin/env python2.7
-from twisted.internet.protocol import Factory, ClientFactory
+from twisted.internet.protocol import Factory, ReconnectingClientFactory, ClientFactory
 from twisted.protocols.basic import LineReceiver
 from twisted.internet import reactor
 from twisted.internet.endpoints import clientFromString
@@ -67,6 +67,7 @@ class User(object):
         with open(self.configfile,'rt') as f:
             self.config = yaml.load(f.read())
         self.upstream_connections = {} #key is ref
+        self.upstream_caches = {} #key is ref
         self.clients = {} # key is resource
 
     def save_config(self):
@@ -103,7 +104,9 @@ class User(object):
         self.upstream_connections[upstream.config.ref] = upstream
         upstream.register_callback(CALLBACK_MESSAGE, self.upstream_message)
         upstream.register_callback(CALLBACK_DISCONNECTED, self.upstream_disconnected)
-        upstream.cache = irc.Cache(upstream)
+        if not upstream.config.ref in self.upstream_caches:
+            self.upstream_caches[upstream.config.ref] = irc.Cache()
+        upstream.cache = self.upstream_caches[upstream.config.ref]
         upstream.register_callback(CALLBACK_MESSAGE,upstream.cache.process_server_message)
         
         # we need to do a USER and NICK command to the server here.
@@ -133,7 +136,21 @@ class User(object):
         """ Called when one of the upstream connections disconnects for whatever reason """
         del self.upstream_connections[upstream.config.ref]
         print "[%s] UPSTREAM DISCONNECTED FOR %s" % (self.name,upstream.config.uri)
+        upstream.config.reconnect_attempts = 0
+        self.upstream_reconnect(upstream.config)
         return upstream
+    def upstream_reconnect(self, upstreamconfig):
+        if upstreamconfig.reconnect_attempts == 3:
+            print "[%s] ABORTING RECONNECT TO %s" % (self.name, upstreamconfig.uri)
+            return
+        print "[%s] ATTEMPTING RECONNECT TO %s ..." % (self.name, upstreamconfig.uri)
+        d = self.bouncer.connect_upstream(upstreamconfig)
+        def __connected(upstream):
+            return upstream.config.user.upstream_connected(upstream)
+        def __error(upstream):
+            upstreamconfig.reconnect_attempts += 1
+            reactor.callLater(pow(2,upstreamconfig.reconnect_attempts), self.upstream_reconnect, upstreamconfig)
+        d.addCallbacks(__connected,__error)
 
     def client_connected(self, client, token):
         """ Called when a client connects for this user."""
@@ -154,8 +171,7 @@ class User(object):
         client.register_callback(CALLBACK_DISCONNECTED,self.client_disconnected)
         self.clients[resource] = client
         if upstreamref in self.upstream_connections:
-            client.upstream = self.upstream_connections[upstreamref]
-            client.upstream.cache.attach_client(client)
+            self.upstream_caches[upstreamref].attach_client
         else:
             upstreamconfig = self.get_upstream_config(upstreamref) 
             if upstreamconfig: # connect on demand
@@ -163,8 +179,7 @@ class User(object):
                 d = self.bouncer.connect_upstream(upstreamconfig)
                 def __connected(upstream):
                     res = self.upstream_connected(upstream)
-                    client.upstream = res
-                    client.upstream.cache.attach_client(client)
+                    self.upstream_caches[upstreamref].attach_client
                     return res
                 d.addCallback(__connected)
             else:
@@ -178,7 +193,7 @@ class User(object):
             print "---> PUTTING OFF FOR 1 SECOND TO GIVE THE UPSTREAM A CHANCE TO COMPLETE CONNECTION!"
             reactor.callLater(1, self.client_message, client, line)
             return
-        if client.upstream.cache.handle_client_message(client,line):
+        if self.upstream_caches[client.upstreamref].handle_client_message(client,line):
             return
         self.upstream_connections[client.upstreamref].sendLine(line)
     def client_disconnected(self, client):

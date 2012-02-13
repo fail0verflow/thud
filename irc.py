@@ -11,13 +11,12 @@ class Channel(object):
         self.messages = deque(maxlen=max_messages)
 
 class Cache(object):
-    def __init__(self,upstream):
+    def __init__(self):
         self.welcome = []
         self.motd = []
         self.mode = []
         self.channels = {}
         self.queries = []
-        self.upstream = upstream
         self.nick = None
 
     def parse_message(self, message):
@@ -38,18 +37,18 @@ class Cache(object):
         #print "CACHE -------- FROM %s TYPE %s ARGS %s" % (prefix, code,args)
         return (prefix,code,args)
 
-    def dispatch_server_message(self, message):
+    def dispatch_server_message(self, source, message):
         prefix, code, args = self.parse_message(message)
         handler = getattr(self,'handle_server_%s' % code, None)
         if handler:
-            return handler(message, prefix, code, args)
+            return handler(source, message, prefix, code, args)
         print "CACHE UNABLE TO DISPATCH UNKNOWN MESSAGE CODE: %s" % message
         return None
 
     def process_server_message(self,upstream,message):
         """ Called with each message from the upstream server. The message should be parsed, analyzed and possibly added to the cache's data-stores."""
         print "CACHE RECEIVED: %s" % message
-        self.dispatch_server_message(message)
+        self.dispatch_server_message(upstream,message)
 
     def handle_client_message(self,client, message):
         """ Called with each message from the client. The message should be parsed and if the cache can handle the message it should send any responses necessary and return true. If the cache can't handle the message, return false."""
@@ -88,10 +87,10 @@ class Cache(object):
             client.sendLine("\n".join(OrderedDict(channel.messages).values()))
 
     # WELCOME
-    def handle_server_RPL_WELCOME(self,message, prefix,code,args):
+    def handle_server_RPL_WELCOME(self, source, message, prefix, code, args):
         self.welcome = []
         self.welcome.append(message)
-    def handle_server_welcome_messages(self,message, prefix,code,args):
+    def handle_server_welcome_messages(self, source, message, prefix, code, args):
         self.welcome.append(message)
     handle_server_RPL_YOURHOST=handle_server_welcome_messages
     handle_server_RPL_CREATED =handle_server_welcome_messages
@@ -99,53 +98,53 @@ class Cache(object):
     handle_server_RPL_ISUPPORT=handle_server_welcome_messages
 
     # MOTD
-    def handle_server_RPL_MOTDSTART(self,message, prefix,code,args):
+    def handle_server_RPL_MOTDSTART(self, source, message, prefix, code, args):
         self.motd = []
         self.motd.append(message)
-    def handle_server_RPL_MOTD(self,message, prefix,code,args):
+    def handle_server_RPL_MOTD(self, source, message, prefix, code, args):
         self.motd.append(message)
-    def handle_server_RPL_ENDOFMOTD(self,message, prefix,code,args):
+    def handle_server_RPL_ENDOFMOTD(self, source, message, prefix, code, args):
         self.motd.append(message)
 
-    def handle_server_MODE(self,message, prefix,code,args):
+    def handle_server_MODE(self, source, message, prefix, code, args):
         self.mode = message
 
     # CHANNEL JOIN
-    def handle_server_JOIN(self, message, prefix, code, args):
+    def handle_server_JOIN(self, source, message, prefix, code, args):
         name = args[0]
         self.channels[name] = Channel(name)
         self.channels[name].init.append(message)
-    def handle_server_RPL_NAMREPLY(self,message,prefix,code,args):
+    def handle_server_RPL_NAMREPLY(self, source, message, prefix, code, args):
         name = args[1] in ["=","*","@"] and args[2] or args[1]
         self.channels[name].init.append(message)
-    def handle_server_RPL_ENDOFNAMES(self,message,prefix,code,args):
+    def handle_server_RPL_ENDOFNAMES(self, source, message, prefix, code, args):
         self.channels[args[1]].init.append(message)
 
-    def handle_server_TOPIC(self,message,prefix,code,args):
+    def handle_server_TOPIC(self, source, message, prefix, code, args):
         self.channels[args[0]].topic = message
 
     # CHANNEL MODE
-    def handle_server_RPL_CHANNELMODEIS(self,message,prefix,code,args):
+    def handle_server_RPL_CHANNELMODEIS(self, source, message, prefix, code, args):
         print "CACHEING CHANNEL MODE: %s" % message
         self.channels[args[1]].mode = [message]
-    def handle_server_RPL_CREATIONTIME(self,message,prefix,code,args):
+    def handle_server_RPL_CREATIONTIME(self, source, message, prefix, code, args):
         self.channels[args[1]].mode.append(message)
 
     # CHANNEL WHO
-    def handle_server_RPL_WHOREPLY(self,message,prefix,code,args):
+    def handle_server_RPL_WHOREPLY(self, source, message, prefix, code, args):
         self.channels[args[1]].who.append(message)
     handle_server_RPL_ENDOFWHO = handle_server_RPL_WHOREPLY
 
     # PING
-    def handle_server_PING(self,message,prefix,code,args):
-        self.upstream.sendLine("PONG %s" % args[0])
+    def handle_server_PING(self, source, message, prefix, code, args):
+        source.sendLine("PONG %s" % args[0])
 
     # NICK
-    def handle_server_NICK(self,message,prefix,code,args):
+    def handle_server_NICK(self, source, message, prefix, code, args):
         self.nick = args[0]
 
     # PRIVMSG
-    def handle_server_PRIVMSG(self,message,prefix,code,args):
+    def handle_server_PRIVMSG(self, source, message, prefix, code, args):
         if args[0] in self.channels:
             self.channels[args[0]].messages.append((datetime.now(),message))
         if args[0] == self.nick:
