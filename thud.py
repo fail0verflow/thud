@@ -1,7 +1,7 @@
 #!/usr/bin/env python2.7
 from twisted.internet.protocol import Factory, ReconnectingClientFactory, ClientFactory
 from twisted.protocols.basic import LineReceiver
-from twisted.internet import reactor
+from twisted.internet import reactor, ssl
 from twisted.internet.endpoints import clientFromString
 from passlib.apps import custom_app_context as pwd_context
 
@@ -206,7 +206,15 @@ class User(object):
 class IRCBouncer:
     def __init__(self,port,configpath="."):
         self.users = {}
-        reactor.listenTCP(port,IRCClientConnectionFactory(self))
+
+        ssl_port = port + 1
+        ssl_key = 'server.key'
+        ssl_cert = 'server.crt'
+        factory = IRCClientConnectionFactory(self)
+        
+        reactor.listenTCP(port, factory)
+        reactor.listenSSL(ssl_port, factory, ssl.DefaultOpenSSLContextFactory(ssl_key, ssl_cert))
+        
         for user_file in glob.glob("%s/*.user" % configpath):
             self.process_user_config(user_file)
 
