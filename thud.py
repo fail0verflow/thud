@@ -206,18 +206,24 @@ class User(object):
 class IRCBouncer:
     def __init__(self,port,configpath="."):
         self.users = {}
-
-        ssl_port = port + 1
-        ssl_key = 'server.key'
-        ssl_cert = 'server.crt'
+        self.process_server_config("%s/thud.conf" % configpath)
         factory = IRCClientConnectionFactory(self)
+
+        if self.config["ssl_enable"]:        
+            print "LISTENING ON PORT %d for SSL" % self.config["ssl_port"]
+            reactor.listenSSL(self.config["ssl_port"], factory, ssl.DefaultOpenSSLContextFactory(self.config["ssl_key"], self.config["ssl_cert"]))
         
-        reactor.listenTCP(port, factory)
-        reactor.listenSSL(ssl_port, factory, ssl.DefaultOpenSSLContextFactory(ssl_key, ssl_cert))
+        if self.config["tcp_enable"]:
+            print "LISTENING ON PORT %d for TCP" % self.config["tcp_port"]
+            reactor.listenTCP(self.config["tcp_port"], factory)
         
         for user_file in glob.glob("%s/*.user" % configpath):
             self.process_user_config(user_file)
 
+    def process_server_config(self, config):
+        print "PROCESSING SERVER CONFIG"
+        self.config = yaml.load(open(config, "r").read())
+        
     def process_user_config(self, config):
         user = User(self,config)
         print "PROCESSING USER CONFIG FOR %s" % user.name
