@@ -2,6 +2,8 @@ name: thudtest
 password: $6$rounds=41731$kLQeLkCceRMdfyD9$G/LOrKKOwZbJxelMNQHTeEZC749LmcYMhfWu8q3docA2urqjxbSx5CX2Okw5bFLNJHygR4wimdPfZ.mSkKx3..
 # the password is: test
 nick: thudtester
+log_enable: true
+log_filename: ./logs/%y/%m/%d/%n/%c.log
 
 upstreams: 
 

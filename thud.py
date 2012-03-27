@@ -9,6 +9,8 @@ import re
 import yaml
 import glob
 import uuid
+import time
+from datetime import datetime
 
 import irc
 
@@ -39,7 +41,10 @@ class UpstreamConfig(object):
     @property
     def password(self):
         return self.config.get("password","")
-
+    @property
+    def log_enable(self):
+        return self.config.get("log_enable", False)
+        
 class ChannelConfig(object):
     def __init__(self,config,upstreamconfig):
         self.config = config
@@ -50,7 +55,90 @@ class ChannelConfig(object):
     @property
     def key(self):
         return self.config.get("key","")
+    @property
+    def log_enable(self):
+        return self.config.get("log_enable", None)
 
+class IRCLogger(object):
+    def __init__(self):
+        self.file_template = None
+        self.file_opened = 0
+        self.file = None
+        self.enable = False
+        self.name = None
+        self.upstream = None
+        self.timestamp_template = None
+        self.last_activity = time.time()
+
+    def read_config(self, config):
+        pass
+
+    def open_file_required(self, now):
+        if self.file == None:
+            return True
+            
+        if (now - self.file_opened) > (60*60*24):
+            return True
+            
+        new = datetime.fromtimestamp(now)
+        old = datetime.fromtimestamp(self.file_opened)
+        if old.day != new.dat:
+            return True
+
+        return False
+        
+    def open_file(self, now):
+        if self.open_file_required(now) != True:
+            return
+       
+        # XXX: fail, too lazy to figure out a sane way to do this...
+        dt = datetime.fromtimestamp(now)
+        fname = self.file_template
+        fname = fname.replace('%y', dt.year)
+        fname = fname.replace('%m', dt.month)
+        fname = fname.replace('%d', dt.day)
+        fname = fname.replace('%n', self.upstream)
+        fname = fname.replace('%c', self.name)
+
+        self.file = open(fname, 'a+')
+        self.file_opened = now
+
+    def shutdown(self):
+        self.file.close()
+        self.file_opened = 0
+
+    def format_timestamp(self, timestamp):
+        timestamp = datetime.fromtimestamp(timestamp)
+        return '%02d:%02d:%02d' % (timestamp.hour, timestamp.minute, timestamp.second)
+        
+    def log(self, timestamp, message):
+        message = '[%s] %s' % (self.format_timestamp(timestamp), message)
+        print '-------- %s' % message
+        return
+        self.open_file(timestamp)
+        self.file.write(message + '\n')
+        self.last_activity = time.time()
+        
+    def clone(self):
+        clone = IRCLogger()
+        clone.file_template = self.file_template
+        clone.enable = self.enable
+        clone.timestamp_template = self.timestamp_template
+        clone.upstream = self.upstream
+        return clone
+
+    def log_join(self, now, name):
+        self.log(now, '*** %s has joined' % name)
+
+    def log_topic(self, now, name, topic):
+        self.log(now, '*** topic has been set by %s to: %s' % (name, topic))      
+
+    def log_mode(self, user, message):
+        self.log(time.time(), "*** %s sets mode %s" % (user, ' '.join(message)))
+        pass
+
+    def log_privmsg(self, now, source, message):
+        self.log(now, '<%s> %s' % (source, message))
 
 class ThudException(Exception):
     pass
@@ -69,7 +157,8 @@ class User(object):
         self.upstream_connections = {} #key is ref
         self.upstream_caches = {} #key is ref
         self.clients = {} # key is resource
-
+        self.logger = [] # no need for keys here
+        
     def save_config(self):
         with open(self.configfile,'wt') as f:
             f.write(yaml.dump(config))
@@ -106,6 +195,21 @@ class User(object):
         upstream.register_callback(CALLBACK_DISCONNECTED, self.upstream_disconnected)
         if not upstream.config.ref in self.upstream_caches:
             self.upstream_caches[upstream.config.ref] = irc.Cache()
+
+            base = IRCLogger()
+            base.read_config(self.config)
+            base.upstream = upstream.config.ref
+            self.upstream_caches[upstream.config.ref].add_logger(None, base)
+            
+            for channel in upstream.config.channel_configs.values():
+                if channel.log_enable == False:
+                    self.upstream_caches[upstream.config.ref].add_logger(channel.name, None)
+                    continue
+                logger = base.clone()
+                logger.read_config(channel.config)
+                logger.name = channel.name
+                self.upstream_caches[upstream.config.ref].add_logger(channel.name, logger)
+                
         upstream.cache = self.upstream_caches[upstream.config.ref]
         upstream.register_callback(CALLBACK_MESSAGE,upstream.cache.process_server_message)
         

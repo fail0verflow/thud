@@ -1,5 +1,6 @@
 from collections import deque, OrderedDict
 from datetime import datetime
+import time
 
 class Channel(object):
     def __init__(self,name, max_messages=30):
@@ -10,6 +11,10 @@ class Channel(object):
         self.mode = []
         self.messages = deque(maxlen=max_messages)
 
+class DummyLogger(object):
+    def call(self, *args):
+        pass
+    
 class Cache(object):
     def __init__(self):
         self.welcome = []
@@ -18,6 +23,32 @@ class Cache(object):
         self.channels = {}
         self.queries = []
         self.nick = None
+        self.logger = {} # 'configured' loggers; key is channel name
+        self.temp_logger = {} # 'temporary' loggers, created for unconfigured channels and privmsg; deleted after inactivity; key is channel/user name
+        self.default_logger = None # logger base class for newly joined channels and privmsgs
+
+    def add_logger(self, channel, logger):
+        if channel == None:
+            self.default_logger = logger
+        else:
+            self.logger[channel] = logger
+
+    def get_logger(self, name):
+        if name in self.logger.items():
+            if self.logger[name] == None:
+                return DummyLogger()
+            return self.logger[name]
+
+        # this is never None: all temp_loggers are based on default_logger and only created when default_logger != None
+        if name in self.temp_logger.items():
+            return self.temp_logger[name]
+
+        if self.default_logger == None:
+            return DummyLogger()
+
+        self.temp_logger[name] = self.default_logger.clone()
+        self.temp_logger[name].name = name
+        return self.temp_logger[name]
 
     def parse_message(self, message):
         prefix = ""
@@ -108,12 +139,14 @@ class Cache(object):
 
     def handle_server_MODE(self, source, message, prefix, code, args):
         self.mode = message
+        self.get_logger(args[1]).log_mode(prefix, args)
 
     # CHANNEL JOIN
     def handle_server_JOIN(self, source, message, prefix, code, args):
         name = args[0]
         self.channels[name] = Channel(name)
         self.channels[name].init.append(message)
+        self.get_logger(name).log_join(time.time(), prefix)
     def handle_server_RPL_NAMREPLY(self, source, message, prefix, code, args):
         name = args[1] in ["=","*","@"] and args[2] or args[1]
         self.channels[name].init.append(message)
@@ -122,6 +155,7 @@ class Cache(object):
 
     def handle_server_TOPIC(self, source, message, prefix, code, args):
         self.channels[args[0]].topic = message
+        self.get_logger(args[0]).log_topic(time.time(), prefix, args[1])
 
     # CHANNEL MODE
     def handle_server_RPL_CHANNELMODEIS(self, source, message, prefix, code, args):
@@ -145,10 +179,13 @@ class Cache(object):
 
     # PRIVMSG
     def handle_server_PRIVMSG(self, source, message, prefix, code, args):
+        timestamp = time.time()
+        now = datetime.fromtimestamp(timestamp)
         if args[0] in self.channels:
-            self.channels[args[0]].messages.append((datetime.now(),message))
+            self.channels[args[0]].messages.append((now,message))
         if args[0] == self.nick:
             self.queries.append(message)
+        self.get_logger(args[0]).log_privmsg(timestamp, prefix, args[1])
 
 
 
