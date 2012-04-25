@@ -259,7 +259,7 @@ class User(object):
     def client_connected(self, client, token):
         """ Called when a client connects for this user."""
         # We need to perform authentication, resource resolution, attach to an upstream,  and possibly replay parts of the cache.
-        if token.count(":") == 3:
+        if token.count(":") == 2:
             password,upstreamref,resource = token.split(":")
         else:
             password,upstreamref = token.split(":")
