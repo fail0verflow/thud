@@ -14,6 +14,13 @@ from datetime import datetime
 
 import irc
 
+class ThudException(Exception):
+    pass
+class AuthenticationFailed(ThudException):
+    pass
+class NoSuchUpstream(ThudException):
+    pass
+
 class UpstreamConfig(object):
     def __init__(self,config,user):
         self.config = config
@@ -43,7 +50,13 @@ class UpstreamConfig(object):
         return self.config.get("password","")
     @property
     def log_enable(self):
-        return self.config.get("log_enable", False)
+        return self.config.get("log_enable",self.user.log_enable)
+    @property
+    def backlog_depth(self):
+        return self.config.get("backlog_depth",self.user.backlog_depth)
+    @property
+    def query_backlog_depth(self):
+        return self.config.get("query_backlog_depth",self.user.query_backlog_depth)
         
 class ChannelConfig(object):
     def __init__(self,config,upstreamconfig):
@@ -57,95 +70,11 @@ class ChannelConfig(object):
         return self.config.get("key","")
     @property
     def log_enable(self):
-        return self.config.get("log_enable", None)
+        return self.config.get("log_enable",self.upstreamconfig.log_enable)
+    @property
+    def backlog_depth(self):
+        return self.config.get("backlog_depth",self.upstreamconfig.backlog_depth)
 
-class IRCLogger(object):
-    def __init__(self):
-        self.file_template = None
-        self.file_opened = 0
-        self.file = None
-        self.enable = False
-        self.name = None
-        self.upstream = None
-        self.timestamp_template = None
-        self.last_activity = time.time()
-
-    def read_config(self, config):
-        pass
-
-    def open_file_required(self, now):
-        if self.file == None:
-            return True
-            
-        if (now - self.file_opened) > (60*60*24):
-            return True
-            
-        new = datetime.fromtimestamp(now)
-        old = datetime.fromtimestamp(self.file_opened)
-        if old.day != new.dat:
-            return True
-
-        return False
-        
-    def open_file(self, now):
-        if self.open_file_required(now) != True:
-            return
-       
-        # XXX: fail, too lazy to figure out a sane way to do this...
-        dt = datetime.fromtimestamp(now)
-        fname = self.file_template
-        fname = fname.replace('%y', dt.year)
-        fname = fname.replace('%m', dt.month)
-        fname = fname.replace('%d', dt.day)
-        fname = fname.replace('%n', self.upstream)
-        fname = fname.replace('%c', self.name)
-
-        self.file = open(fname, 'a+')
-        self.file_opened = now
-
-    def shutdown(self):
-        self.file.close()
-        self.file_opened = 0
-
-    def format_timestamp(self, timestamp):
-        timestamp = datetime.fromtimestamp(timestamp)
-        return '%02d:%02d:%02d' % (timestamp.hour, timestamp.minute, timestamp.second)
-        
-    def log(self, timestamp, message):
-        message = '[%s] %s' % (self.format_timestamp(timestamp), message)
-        print '-------- %s' % message
-        return
-        self.open_file(timestamp)
-        self.file.write(message + '\n')
-        self.last_activity = time.time()
-        
-    def clone(self):
-        clone = IRCLogger()
-        clone.file_template = self.file_template
-        clone.enable = self.enable
-        clone.timestamp_template = self.timestamp_template
-        clone.upstream = self.upstream
-        return clone
-
-    def log_join(self, now, name):
-        self.log(now, '*** %s has joined' % name)
-
-    def log_topic(self, now, name, topic):
-        self.log(now, '*** topic has been set by %s to: %s' % (name, topic))      
-
-    def log_mode(self, user, message):
-        self.log(time.time(), "*** %s sets mode %s" % (user, ' '.join(message)))
-        pass
-
-    def log_privmsg(self, now, source, message):
-        self.log(now, '<%s> %s' % (source, message))
-
-class ThudException(Exception):
-    pass
-class AuthenticationFailed(ThudException):
-    pass
-class NoSuchUpstream(ThudException):
-    pass
 
 class User(object):
     """ This is the central class in thud. A User instance acts as a central point for all clients and upstream connections. All messages pass through here. """
@@ -182,6 +111,14 @@ class User(object):
     @property
     def password(self):
         return self.config.get("password")
+    @property
+    def backlog_depth(self):
+        return self.config.get("backlog_depth",self.bouncer.backlog_depth)
+    def query_backlog_depth(self):
+        return self.config.get("query_backlog_depth",self.bouncer.query_backlog_depth)
+    @property
+    def log_enable(self):
+        return self.config.get("log_enable",self.bouncer.log_enable)
 
     def authenticate_client(self, password):
         """ Called when a downstream client connects and is attempting to authenticate """
@@ -211,6 +148,7 @@ class User(object):
                 self.upstream_caches[upstream.config.ref].add_logger(channel.name, logger)
                 
         upstream.cache = self.upstream_caches[upstream.config.ref]
+        upstream.cache.upstream = upstream
         upstream.register_callback(CALLBACK_MESSAGE,upstream.cache.process_server_message)
         
         # we need to do a USER and NICK command to the server here.
@@ -327,6 +265,15 @@ class IRCBouncer:
         for user_file in glob.glob("%s/*.user" % configpath):
             self.process_user_config(user_file)
 
+    @property
+    def log_enable(self):
+        return self.config.get("log_enable",None)
+    @property
+    def backlog_depth(self):
+        return self.config.get("backlog_depth",100)
+    def query_backlog_depth(self):
+        return self.config.get("query_backlog_depth",self.backlog_depth)
+
     def process_server_config(self, config):
         print "PROCESSING SERVER CONFIG"
         self.config = yaml.load(open(config, "r").read())
@@ -375,6 +322,86 @@ class IRCBouncer:
         else:
             raise AuthenticationFailed("CLIENT CONNECTED WITH UNKNOWN USERNAME: %s" % username)
 
+class IRCLogger(object):
+    def __init__(self):
+        self.file_template = None
+        self.file_opened = 0
+        self.file = None
+        self.enable = False
+        self.name = None
+        self.upstream = None
+        self.timestamp_template = None
+        self.last_activity = time.time()
+
+    def read_config(self, config):
+        pass
+
+    def open_file_required(self, now):
+        if self.file == None:
+            return True
+            
+        if (now - self.file_opened) > (60*60*24):
+            return True
+            
+        new = datetime.fromtimestamp(now)
+        old = datetime.fromtimestamp(self.file_opened)
+        if old.day != new.dat:
+            return True
+
+        return False
+        
+    def open_file(self, now):
+        if self.open_file_required(now) != True:
+            return
+       
+        # XXX: fail, too lazy to figure out a sane way to do this...
+        dt = datetime.fromtimestamp(now)
+        fname = self.file_template
+        fname = fname.replace('%y', dt.year)
+        fname = fname.replace('%m', dt.month)
+        fname = fname.replace('%d', dt.day)
+        fname = fname.replace('%n', self.upstream)
+        fname = fname.replace('%c', self.name)
+
+        self.file = open(fname, 'a+')
+        self.file_opened = now
+
+    def shutdown(self):
+        self.file.close()
+        self.file_opened = 0
+
+    def format_timestamp(self, timestamp):
+        timestamp = datetime.fromtimestamp(timestamp)
+        return '%02d:%02d:%02d' % (timestamp.hour, timestamp.minute, timestamp.second)
+        
+    def log(self, timestamp, message):
+        message = '[%s] %s' % (self.format_timestamp(timestamp), message)
+        print '-------- %s' % message
+        return
+        self.open_file(timestamp)
+        self.file.write(message + '\n')
+        self.last_activity = time.time()
+        
+    def clone(self):
+        clone = IRCLogger()
+        clone.file_template = self.file_template
+        clone.enable = self.enable
+        clone.timestamp_template = self.timestamp_template
+        clone.upstream = self.upstream
+        return clone
+
+    def log_join(self, now, name):
+        self.log(now, '*** %s has joined' % name)
+
+    def log_topic(self, now, name, topic):
+        self.log(now, '*** topic has been set by %s to: %s' % (name, topic))      
+
+    def log_mode(self, user, message):
+        self.log(time.time(), "*** %s sets mode %s" % (user, ' '.join(message)))
+        pass
+
+    def log_privmsg(self, now, source, message):
+        self.log(now, '<%s> %s' % (source, message))
 
 
 CALLBACK_MESSAGE        = 0

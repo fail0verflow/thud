@@ -2,8 +2,9 @@ from collections import deque, OrderedDict, defaultdict
 from datetime import datetime
 import time
 class MessageBuffer(object):
-    def __init__(self,max_depth=30):
-        self.messages = deque(maxlen=max_depth)
+    def __init__(self,config=None):
+        self.config = config
+        self.messages = deque(maxlen=self.config.backlog_depth)
 
     def log_message(self, timestamp, message):
         pass
@@ -26,7 +27,7 @@ class MessageBuffer(object):
         # replay messages since the last_seen time.
         client.sendLine("\n".join(self.get_messages_since(last_seen)))
 
-class Channel(MessageBuffer):
+class ChannelBuffer(MessageBuffer):
     def __init__(self,name, max_depth=30):
         MessageBuffer.__init__(self,max_depth)
         self.init = []
@@ -38,9 +39,9 @@ class Channel(MessageBuffer):
     def rejoin(self, client, last_seen):
         client.sendLine("\n".join(self.init))
         client.sendLine(self.topic)
-        super(Channel,self).rejoin(client, last_seen)
+        super(ChannelBuffer,self).rejoin(client, last_seen)
 
-class Query(MessageBuffer):
+class QueryBuffer(MessageBuffer):
     def __init__(self,nick, max_depth=30):
         MessageBuffer.__init__(self,max_depth)
         self.nick = nick
@@ -52,6 +53,7 @@ class DummyLogger(object):
     
 class Cache(object):
     def __init__(self):
+        self.upstream = None
         self.welcome = []
         self.motd = []
         self.mode = []
@@ -209,7 +211,7 @@ class Cache(object):
     # CHANNEL JOIN
     def handle_server_JOIN(self, source, message, prefix, code, args):
         name = args[0]
-        self.channels[name] = Channel(name)
+        self.channels[name] = ChannelBuffer(name,self.upstream.config.channel_configs.get(name,None))
         self.channels[name].init.append(message)
         self.get_logger(name).log_join(time.time(), prefix)
     def handle_server_RPL_NAMREPLY(self, source, message, prefix, code, args):
@@ -251,7 +253,7 @@ class Cache(object):
         else:
             nick = prefix[1:].partition("!")[0]
             if not nick in self.queries:
-                self.queries[nick] = Query(nick)
+                self.queries[nick] = QueryBuffer(nick,self.upstream.config.query_backlog_depth)
             print "QUERY RCV [%s] %s" % (nick,message)
             self.queries[nick].add_message(message)
         #self.get_logger(args[0]).log_privmsg(timestamp, prefix, args[1])
