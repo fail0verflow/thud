@@ -187,18 +187,6 @@ class Cache(object):
         self.update_last_seen(client)
         return True
 
-    def attach_client(self, client):
-        """ Called when a client wishes to attach to the cache. Should send the welcome, motd and privmsg/query caches to him, as well as registering his resource for channel backlogs. """
-        #Not sure we should be pushing all these channels out, but hey why not:
-        for channel in self.channels.values():
-            print "PUSHING CHANNEL: %s" % channel.name
-            client.sendLine("\n".join(channel.init))
-            client.sendLine("\n".join(channel.mode))
-            client.sendLine("\n".join(channel.who))
-            client.sendLine("\n".join(channel.topic))
-            print "BACKLOGGING: \n\t%s" % "\n\t".join(OrderedDict(channel.messages).values())
-            client.sendLine("\n".join(OrderedDict(channel.messages).values()))
-
     # WELCOME
     def handle_server_RPL_WELCOME(self, source, message, prefix, code, args):
         self.welcome = []

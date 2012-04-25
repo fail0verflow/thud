@@ -213,16 +213,13 @@ class User(object):
         client.register_callback(CALLBACK_MESSAGE,self.client_message)
         client.register_callback(CALLBACK_DISCONNECTED,self.client_disconnected)
         self.clients[resource] = client
-        if upstreamref in self.upstream_connections:
-            self.upstream_caches[upstreamref].attach_client
-        else:
+        if not upstreamref in self.upstream_connections:
             upstreamconfig = self.get_upstream_config(upstreamref) 
             if upstreamconfig: # connect on demand
                 print "[%s] ON DEMAND CONNECTING TO UPSTREAM %s" % (self.name,upstreamconfig.uri)
                 d = self.bouncer.connect_upstream(upstreamconfig)
                 def __connected(upstream):
                     res = self.upstream_connected(upstream)
-                    self.upstream_caches[upstreamref].attach_client
                     return res
                 d.addCallback(__connected)
             else:
