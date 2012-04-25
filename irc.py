@@ -14,14 +14,15 @@ class MessageBuffer(object):
         timestamp = datetime.now()
         self.log_message(timestamp,message)
         self.messages.append((timestamp,message))
-        #TODO: logging
 
     def get_messages_since(self, last_time):
         print "REPLAYING MESSAGES SINCE %s" % last_time
         messages = []
         for stamp, message in self.messages:
-            print "DBG: stamp: %s, msg: %s" % (stamp, message)
             if stamp > last_time:
+                #TODO: make this configurable!
+                parts = message.split(" ",3)
+                message = " ".join(parts[:3]) + (" :[%s] %s" % (stamp.strftime("%H:%M:%S"), parts[3][1:]))
                 messages.append(message)
         return messages
 
@@ -208,6 +209,7 @@ class Cache(object):
             client.sendLine("\n".join(self.mode))
             client.sendLine("\n".join(self.queries))
             #TODO: send privmsgs and register resource
+            print self.channels
             for channel in self.channels.values():
                 print "FORCING CLIENT JOIN TO CHANNEL %s" % channel.name
                 channel.rejoin(client,last_seen)
