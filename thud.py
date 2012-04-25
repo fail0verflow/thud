@@ -114,6 +114,7 @@ class User(object):
     @property
     def backlog_depth(self):
         return self.config.get("backlog_depth",self.bouncer.backlog_depth)
+    @property
     def query_backlog_depth(self):
         return self.config.get("query_backlog_depth",self.bouncer.query_backlog_depth)
     @property
@@ -271,6 +272,7 @@ class IRCBouncer:
     @property
     def backlog_depth(self):
         return self.config.get("backlog_depth",100)
+    @property
     def query_backlog_depth(self):
         return self.config.get("query_backlog_depth",self.backlog_depth)
 

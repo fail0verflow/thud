@@ -2,9 +2,11 @@ from collections import deque, OrderedDict, defaultdict
 from datetime import datetime
 import time
 class MessageBuffer(object):
-    def __init__(self,config=None):
+    def __init__(self,config, maxlen=0):
         self.config = config
-        self.messages = deque(maxlen=self.config.backlog_depth)
+        if not maxlen:
+            maxlen = self.config.backlog_depth
+        self.messages = deque(maxlen=maxlen)
 
     def log_message(self, timestamp, message):
         pass
@@ -28,8 +30,8 @@ class MessageBuffer(object):
         client.sendLine("\n".join(self.get_messages_since(last_seen)))
 
 class ChannelBuffer(MessageBuffer):
-    def __init__(self,name, max_depth=30):
-        MessageBuffer.__init__(self,max_depth)
+    def __init__(self,name, config):
+        MessageBuffer.__init__(self,config)
         self.init = []
         self.name = name
         self.topic = ""
@@ -42,8 +44,8 @@ class ChannelBuffer(MessageBuffer):
         super(ChannelBuffer,self).rejoin(client, last_seen)
 
 class QueryBuffer(MessageBuffer):
-    def __init__(self,nick, max_depth=30):
-        MessageBuffer.__init__(self,max_depth)
+    def __init__(self,nick, config):
+        MessageBuffer.__init__(self,config,config.query_backlog_depth)
         self.nick = nick
 
 
@@ -153,7 +155,7 @@ class Cache(object):
             else:
                 nick = args[0]
                 if not nick in self.queries:
-                    self.queries[nick] = Query(nick)
+                    self.queries[nick] = QueryBuffer(nick,self.upstream.config)
                 print "QUERY SEND [%s] %s" % (nick,message)
                 self.queries[nick].add_message(message)
             # update last_seen, but return false so that the message is sent to the server 
@@ -253,7 +255,7 @@ class Cache(object):
         else:
             nick = prefix[1:].partition("!")[0]
             if not nick in self.queries:
-                self.queries[nick] = QueryBuffer(nick,self.upstream.config.query_backlog_depth)
+                self.queries[nick] = QueryBuffer(nick,self.upstream.config)
             print "QUERY RCV [%s] %s" % (nick,message)
             self.queries[nick].add_message(message)
         #self.get_logger(args[0]).log_privmsg(timestamp, prefix, args[1])
