@@ -49,6 +49,48 @@ class QueryBuffer(MessageBuffer):
         MessageBuffer.__init__(self,config,config.query_backlog_depth)
         self.nick = nick
 
+class ThudCommand(object):
+    def __init__(self,shell,name,description=""):
+        self.shell = shell
+        self.name = name
+        self.description = description
+    def help(self,args):
+        self._help(args)
+    def _help(self,args):
+        self.shell.respond("help: %s" % self.description)
+    def run(self, args):
+        self._run(args)
+    def _run(self, args):
+        pass
+class HelpCommand(ThudCommand):
+    def __init__(self,shell):
+        super(HelpCommand,self).__init__(shell,"help","command help")
+    def _run(self,args):
+        if not len(args):
+            self.shell.respond("thud shell help. commands available:")
+            for name, cmd  in self.shell.commands.items():
+                self.shell.respond("    %s - %s" % (name,cmd.description))
+        else:
+            cmd = args[0].lower()
+            if cmd in self.shell.commands:
+                self.shell.commands[cmd].help(args[1:])
+            else:
+                self.shell.respond("help: unknown command")
+
+class ThudShell(object):
+    def __init__(self, cache, client):
+        self.cache,self.client = cache,client
+        self.commands = {"help": HelpCommand(self)}
+    def respond(self, message):
+        messages = message.split("\n")
+        for m in messages:
+            self.client.sendLine(":thud!cache@th.ud NOTICE %s :%s" % (self.cache.upstream.config.nick,m))
+    def handle(self, args):
+        cmd = args[0].lower()
+        if cmd in self.commands:
+            self.commands[cmd].run(args[1:])
+        else:
+            self.respond("unknown command: %s" % args)
 
 class DummyLogger(object):
     def call(self, *args):
@@ -65,6 +107,7 @@ class Cache(object):
         self.nick = None
         # dictionary keyed on client resource, which lists when each resource was last known to be alive.
         self.last_seen = defaultdict(lambda: datetime.fromordinal(1))
+        self.shells = {} # key is resource
         self.logger = {} # 'configured' loggers; key is channel name
         self.temp_logger = {} # 'temporary' loggers, created for unconfigured channels and privmsg; deleted after inactivity; key is channel/user name
         self.default_logger = None # logger base class for newly joined channels and privmsgs
@@ -97,7 +140,11 @@ class Cache(object):
         if message.startswith(":"):
             prefix,code,args = message.split(" ",2)
         else:
-            code,args = message.split(" ",1)
+            if " " in message:
+                code,args = message.split(" ",1)
+            else: 
+                code,args = (message,"")
+                
         if ":" in args:
             args,d,last_arg = args.partition(":")
             args = args.split() + [last_arg]
@@ -110,6 +157,7 @@ class Cache(object):
         #print "CACHE -------- FROM %s TYPE %s ARGS %s" % (prefix, code,args)
         return (prefix,code,args)
 
+            
     def dispatch_server_message(self, source, message):
         prefix, code, args = self.parse_message(message)
         handler = getattr(self,'handle_server_%s' % code, None)
@@ -162,6 +210,10 @@ class Cache(object):
             # update last_seen, but return false so that the message is sent to the server 
             self.update_last_seen(client)
             return False
+        elif code == "THUD":
+            if not client.resource in self.shells:
+                self.shells[client.resource] = ThudShell(self,client)
+            self.shells[client.resource].handle(args)
         elif code == "JOIN" and args[0] in self.channels:
             print "GOT JOIN MESSAGE FOR %s" % args[0]
             self.channels[args[0]].rejoin(client,last_seen)
