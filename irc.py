@@ -214,7 +214,7 @@ class Cache(object):
     # CHANNEL JOIN
     def handle_server_JOIN(self, source, message, prefix, code, args):
         name = args[0]
-        self.channels[name] = ChannelBuffer(name,self.upstream.config.channel_configs.get(name,None))
+        self.channels[name] = ChannelBuffer(name,self.upstream.config.channel_configs.get(name,self.upstream.config))
         self.channels[name].init.append(message)
         self.get_logger(name).log_join(time.time(), prefix)
     def handle_server_RPL_NAMREPLY(self, source, message, prefix, code, args):
