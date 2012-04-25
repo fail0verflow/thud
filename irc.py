@@ -1,17 +1,20 @@
 from collections import deque, OrderedDict, defaultdict
 from datetime import datetime
 import time
+class MessageBuffer(object):
+    def __init__(self,max_depth=30):
+        self.messages = deque(maxlen=max_depth)
 
-class Channel(object):
-    def __init__(self,name, max_messages=30):
-        self.init = []
-        self.name = name
-        self.topic = ""
-        self.who = []
-        self.mode = []
-        self.messages = deque(maxlen=max_messages)
+    def log_message(self, timestamp, message):
+        pass
+    def add_message(self, message):
+        timestamp = datetime.now()
+        self.log_message(timestamp,message)
+        self.messages.append((timestamp,message))
+        #TODO: logging
+
     def get_messages_since(self, last_time):
-        print "REPLAYING %s MESSAGES SINCE %s" % (self.name, last_time)
+        print "REPLAYING MESSAGES SINCE %s" % last_time
         messages = []
         for stamp, message in self.messages:
             print "DBG: stamp: %s" % stamp
@@ -20,10 +23,27 @@ class Channel(object):
         return messages
 
     def rejoin(self, client, last_seen):
-        client.sendLine("\n".join(self.init))
-        client.sendLine(self.topic)
         # replay messages since the last_seen time.
         client.sendLine("\n".join(self.get_messages_since(last_seen)))
+
+class Channel(MessageBuffer):
+    def __init__(self,name, max_depth=30):
+        MessageBuffer.__init__(self,max_depth)
+        self.init = []
+        self.name = name
+        self.topic = ""
+        self.who = []
+        self.mode = []
+
+    def rejoin(self, client, last_seen):
+        client.sendLine("\n".join(self.init))
+        client.sendLine(self.topic)
+        super(Channel,self).rejoin(client, last_seen)
+
+class Query(MessageBuffer):
+    def __init__(self,nick, max_depth=30):
+        MessageBuffer.__init__(self,max_depth)
+        self.nick = nick
 
 
 class DummyLogger(object):
@@ -36,7 +56,7 @@ class Cache(object):
         self.motd = []
         self.mode = []
         self.channels = {}
-        self.queries = []
+        self.queries = {}
         self.nick = None
         # dictionary keyed on client resource, which lists when each resource was last known to be alive.
         self.last_seen = defaultdict(lambda: datetime.fromordinal(1))
@@ -117,9 +137,26 @@ class Cache(object):
             for channel in self.channels.values():
                 print "FORCING CLIENT JOIN TO CHANNEL %s" % channel.name
                 channel.rejoin(client,last_seen)
-        elif code in ["QUIT","PRIVMSG"]:
+            for query in self.queries.values():
+                print "FORCING CLIENT JOIN TO QUERY %s" % query.nick
+                query.rejoin(client,last_seen)
+        elif code in ["QUIT"]:
             # just update last_seen
             pass
+        elif code == "PRIVMSG":
+            timestamp = time.time()
+            now = datetime.fromtimestamp(timestamp)
+            if args[0] in self.channels:
+                self.channels[args[0]].add_message(message)
+            else:
+                nick = args[0]
+                if not nick in self.queries:
+                    self.queries[nick] = Query(nick)
+                print "QUERY SEND [%s] %s" % (nick,message)
+                self.queries[nick].add_message(message)
+            # update last_seen, but return false so that the message is sent to the server 
+            self.update_last_seen(client)
+            return False
         elif code == "JOIN" and args[0] in self.channels:
             print "GOT JOIN MESSAGE FOR %s" % args[0]
             self.channels[args[0]].rejoin(client,last_seen)
@@ -210,10 +247,14 @@ class Cache(object):
         timestamp = time.time()
         now = datetime.fromtimestamp(timestamp)
         if args[0] in self.channels:
-            self.channels[args[0]].messages.append((now,message))
-        if args[0] == self.nick:
-            self.queries.append(message)
-        self.get_logger(args[0]).log_privmsg(timestamp, prefix, args[1])
+            self.channels[args[0]].add_message(message)
+        else:
+            nick = prefix[1:].partition("!")[0]
+            if not nick in self.queries:
+                self.queries[nick] = Query(nick)
+            print "QUERY RCV [%s] %s" % (nick,message)
+            self.queries[nick].add_message(message)
+        #self.get_logger(args[0]).log_privmsg(timestamp, prefix, args[1])
 
 
 
