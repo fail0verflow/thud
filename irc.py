@@ -1,4 +1,4 @@
-from collections import deque, OrderedDict
+from collections import deque, OrderedDict, defaultdict
 from datetime import datetime
 import time
 
@@ -10,6 +10,21 @@ class Channel(object):
         self.who = []
         self.mode = []
         self.messages = deque(maxlen=max_messages)
+    def get_messages_since(self, last_time):
+        print "REPLAYING %s MESSAGES SINCE %s" % (self.name, last_time)
+        messages = []
+        for stamp, message in self.messages:
+            print "DBG: stamp: %s" % stamp
+            if stamp > last_time:
+                messages.append(message)
+        return messages
+
+    def rejoin(self, client, last_seen):
+        client.sendLine("\n".join(self.init))
+        client.sendLine(self.topic)
+        # replay messages since the last_seen time.
+        client.sendLine("\n".join(self.get_messages_since(last_seen)))
+
 
 class DummyLogger(object):
     def call(self, *args):
@@ -23,6 +38,8 @@ class Cache(object):
         self.channels = {}
         self.queries = []
         self.nick = None
+        # dictionary keyed on client resource, which lists when each resource was last known to be alive.
+        self.last_seen = defaultdict(lambda: datetime.fromordinal(1))
         self.logger = {} # 'configured' loggers; key is channel name
         self.temp_logger = {} # 'temporary' loggers, created for unconfigured channels and privmsg; deleted after inactivity; key is channel/user name
         self.default_logger = None # logger base class for newly joined channels and privmsgs
@@ -81,30 +98,41 @@ class Cache(object):
         print "CACHE RECEIVED: %s" % message
         self.dispatch_server_message(upstream,message)
 
+    def update_last_seen(self,client):
+        print "[*] UPDATE LAST_SEEN FOR %s" % client.resource
+        self.last_seen[client.resource] = datetime.now()
+
     def handle_client_message(self,client, message):
         """ Called with each message from the client. The message should be parsed and if the cache can handle the message it should send any responses necessary and return true. If the cache can't handle the message, return false."""
         prefix, code, args = self.parse_message(message)
+        last_seen = self.last_seen[client.resource]
         if code == "USER":
             print "REGISTERING CLIENT: %s" % (message)
+            print "RESOURCE (%s) LAST SEEN AT %s" % (client.resource, last_seen)
             client.sendLine("\n".join(self.welcome))
             client.sendLine("\n".join(self.motd))
             client.sendLine("\n".join(self.mode))
             client.sendLine("\n".join(self.queries))
             #TODO: send privmsgs and register resource
-            return True
-        elif code == "QUIT":
-            return True
+            for channel in self.channels.values():
+                print "FORCING CLIENT JOIN TO CHANNEL %s" % channel.name
+                channel.rejoin(client,last_seen)
+        elif code in ["QUIT","PRIVMSG"]:
+            # just update last_seen
+            pass
         elif code == "JOIN" and args[0] in self.channels:
-            client.sendLine("\n".join(self.channels[args[0]].init))
-            client.sendLine(self.channels[args[0]].topic)
-            return True
+            print "GOT JOIN MESSAGE FOR %s" % args[0]
+            self.channels[args[0]].rejoin(client,last_seen)
         elif code == "MODE" and args[0] in self.channels and len(self.channels[args[0]].mode):
             client.sendLine("\n".join(self.channels[args[0]].mode))
-            return True
         elif code == "WHO" and args[0] in self.channels and len(self.channels[args[0]].who):
             client.sendLine("\n".join(self.channels[args[0]].who))
-            return True
-        return False
+        else:
+            print "CACHE IGNORING CLIENT MESSAGE %s:%s" % (code,args)
+            return False
+        self.update_last_seen(client)
+        return True
+
     def attach_client(self, client):
         """ Called when a client wishes to attach to the cache. Should send the welcome, motd and privmsg/query caches to him, as well as registering his resource for channel backlogs. """
         #Not sure we should be pushing all these channels out, but hey why not:
