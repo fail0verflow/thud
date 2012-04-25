@@ -20,7 +20,7 @@ class MessageBuffer(object):
         print "REPLAYING MESSAGES SINCE %s" % last_time
         messages = []
         for stamp, message in self.messages:
-            print "DBG: stamp: %s" % stamp
+            print "DBG: stamp: %s, msg: %s" % (stamp, message)
             if stamp > last_time:
                 messages.append(message)
         return messages
@@ -41,8 +41,9 @@ class ChannelBuffer(MessageBuffer):
     def rejoin(self, client, last_seen):
         client.sendLine("\n".join(self.init))
         client.sendLine(self.topic)
-        super(ChannelBuffer,self).rejoin(client, last_seen)
-
+        messages = self.get_messages_since(last_seen)
+        client.sendLine(":thud!cache@th.ud NOTICE %s :Welcome back! You were last here at %s. Since then, there have been %d messages, replayed below:" % (self.name, last_seen, len(messages)))
+        client.sendLine("\n".join(messages))
 class QueryBuffer(MessageBuffer):
     def __init__(self,nick, config):
         MessageBuffer.__init__(self,config,config.query_backlog_depth)
