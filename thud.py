@@ -315,7 +315,10 @@ class IRCBouncer:
 
         if self.config["ssl_enable"]:        
             print "LISTENING ON PORT %d for SSL" % self.config["ssl_port"]
-            reactor.listenSSL(self.config["ssl_port"], factory, ssl.DefaultOpenSSLContextFactory(self.config["ssl_key"], self.config["ssl_cert"]))
+            try:
+	    	reactor.listenSSL(self.config["ssl_port"], factory, ssl.DefaultOpenSSLContextFactory(self.config["ssl_key"], self.config["ssl_cert"]))
+	    except Exception,e:
+	    	print "FAILED TO LISTEN FOR SSL: %s" % e
         
         if self.config["tcp_enable"]:
             print "LISTENING ON PORT %d for TCP" % self.config["tcp_port"]
