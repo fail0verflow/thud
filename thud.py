@@ -148,8 +148,7 @@ class User(object):
                 logger.name = channel.name
                 self.upstream_caches[upstream.config.ref].add_logger(channel.name, logger)
                 
-        upstream.cache = self.upstream_caches[upstream.config.ref]
-        upstream.cache.upstream = upstream
+        self.upstream_caches[upstream.config.ref].set_upstream(upstream)
         upstream.register_callback(CALLBACK_MESSAGE,upstream.cache.process_server_message)
         
         # we need to do a USER and NICK command to the server here.
