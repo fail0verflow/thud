@@ -24,3 +24,5 @@ Don't resent 'registration' messages like USER or NICK on secondary-client-resou
 
 08: Implement a 'dummy' management upstream
 When specified in the PASS, this upstream should not attempt to connect to a real upstream server, but instead provide access to management and configuration for the current user. Every aspect of the configuration should be modifiable via /msg's to an admin user or channel. It should be possible to send a 'raw' configuration file which completely replaces the existing file for the user.
+
+09: ADD DONGS 
