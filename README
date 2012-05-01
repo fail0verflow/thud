@@ -9,4 +9,29 @@ To install, simply do:
 
 Configuration
 ======
-Look at the included test.user for an example. To generate password hashes, use the mkpasswd.py script.
+Look at thud.conf for global configuration (ports, ssl, etc.)
+
+Look at the included test.user for an example user. To generate password hashes, use the mkpasswd.py script. Passwords MUST NOT contain ':'.
+
+Connection
+======
+Point your client at your server's ip:port.
+
+Set it to send a 'server password' on connection. This 'password' should be your logon token, which has the following form:
+    username:password:server-name[:client-resource-name]
+
+Where:
+    username is the username specified in the .user file
+    password is the password generated using mkpasswd.py and specified in the .user file
+    server-name is the name of one of the servers specified in the .user file
+    client-resource-name is an optional name identifying the specific client from which you are connected. 
+
+Client resources
+======
+Thud lets you log on to a single upstream server from multiple clients simultaneously. In order to keep track of which connection comes from which client (e.g. one on your phone and one on your laptop), it uses 'client-resources' - similar to jabber's client resources.
+
+It can then do cool things like keep track of when each client-resource was last active, and replay backlogs on a per-resource basis. This means that if you only miss 3 messages on your phone, but missed 5 on your laptop, it will deliver ONLY the missed messages for each specific client. Pretty cool stuff.
+
+This will only really work if you specify a client-resource name in your login token. 
+
+In the future, we'll probably allow per-resource configuration of things like highlight/mention delivery, permission to make online config modifications, access to the thud command shell etc. Who knows!
