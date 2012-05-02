@@ -34,16 +34,16 @@ class ListCommand(ThudCommand):
         if len(args) != 1:
             return self.help(args)
         kind = args[0].lower()
-        if "servers".startswith(kind) or "upstreams".startswith(kind):
-            self.shell.respond("connected upstream servers:")
-            upstream_connections = self.shell.cache.upstream.config.user.upstream_connections
-            for name, upstream in upstream_connections.items():
-                self.shell.respond("    %s - %s" % (name, upstream.config.uri))
+        if "servers".startswith(kind) or "servers".startswith(kind):
+            self.shell.respond("connected server servers:")
+            server_connections = self.shell.cache.server.config.user.server_connections
+            for name, server in server_connections.items():
+                self.shell.respond("    %s - %s" % (name, server.config.uri))
         elif "clients".startswith(kind) or "resources".startswith(kind):
             self.shell.respond("connected downstream client resources:")
-            clients = self.shell.cache.upstream.config.user.clients
+            clients = self.shell.cache.server.config.user.clients
             for resource, client in clients.items():
-                self.shell.respond("    %s connected to %s last seen at %s" % (resource,client.upstreamref,self.shell.cache.last_seen[resource]))
+                self.shell.respond("    %s connected to %s last seen at %s" % (resource,client.serverref,self.shell.cache.last_seen[resource]))
 
 
 class ThudShell(object):
@@ -56,7 +56,7 @@ class ThudShell(object):
     def respond(self, message):
         messages = message.split("\n")
         for m in messages:
-            self.client.sendLine(":thud!cache@th.ud NOTICE %s :%s" % (self.cache.upstream.config.nick,m))
+            self.client.sendLine(":thud!cache@th.ud NOTICE %s :%s" % (self.cache.server.config.nick,m))
     def handle(self, args):
         cmd = args[0].lower()
         if cmd in self.commands:

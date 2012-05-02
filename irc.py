@@ -204,7 +204,7 @@ class DummyLogger(object):
         pass
 class Cache(object):
     def __init__(self):
-        self.upstream = None
+        self.server = None
         self.welcome = []
         self.motd = []
         self.mode = []
@@ -218,10 +218,10 @@ class Cache(object):
         self.temp_logger = {} # 'temporary' loggers, created for unconfigured channels and privmsg; deleted after inactivity; key is channel/user name
         self.default_logger = None # logger base class for newly joined channels and privmsgs
 
-    def set_upstream(self,upstream):
-        self.upstream = upstream
-        self.upstream.cache = self
-        self.nick = self.upstream.config.nick
+    def set_server(self,server):
+        self.server = server
+        self.server.cache = self
+        self.nick = self.server.config.nick
 
     def add_logger(self, channel, logger):
         if channel == None:
@@ -256,10 +256,10 @@ class Cache(object):
         print "CACHE UNABLE TO DISPATCH UNKNOWN MESSAGE CODE: %s" % message
         return None
 
-    def process_server_message(self,upstream,message):
-        """ Called with each message from the upstream server. The message should be parsed, analyzed and possibly added to the cache's data-stores."""
+    def process_server_message(self,server,message):
+        """ Called with each message from the server server. The message should be parsed, analyzed and possibly added to the cache's data-stores."""
         print "CACHE RECEIVED: %s" % message
-        self.dispatch_server_message(upstream,message)
+        self.dispatch_server_message(server,message)
 
     def update_last_seen(self,client):
         print "[*] UPDATE LAST_SEEN FOR %s" % client.resource
@@ -295,7 +295,7 @@ class Cache(object):
             else:
                 nick = args[0]
                 if not nick in self.queries:
-                    self.queries[nick] = QueryBuffer(nick,self.upstream.config)
+                    self.queries[nick] = QueryBuffer(nick,self.server.config)
                 print "QUERY SEND [%s] %s" % (nick,message)
                 self.queries[nick].add_message(message)
             # update last_seen, but return false so that the message is sent to the server 
@@ -358,7 +358,7 @@ class Cache(object):
         print "SERVER JOIN: %s" % message
         name = args[0]
         if name not in self.channels:
-            self.channels[name] = ChannelBuffer(name,self,self.upstream.config.channel_configs.get(name,self.upstream.config))
+            self.channels[name] = ChannelBuffer(name,self,self.server.config.channel_configs.get(name,self.server.config))
         self.channels[name].add_join(message,prefix,code,args)
     def handle_server_PART(self, source, message, prefix, code, args):
         name = args[0]
@@ -408,7 +408,7 @@ class Cache(object):
         else:
             nick = prefix[1:].partition("!")[0]
             if not nick in self.queries:
-                self.queries[nick] = QueryBuffer(nick,self.upstream.config)
+                self.queries[nick] = QueryBuffer(nick,self.server.config)
             print "QUERY RCV [%s] %s" % (nick,message)
             self.queries[nick].add_message(message)
         #self.get_logger(args[0]).log_priovmsg(timestamp, prefix, args[1])
