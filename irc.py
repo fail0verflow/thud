@@ -78,8 +78,10 @@ class MessageBuffer(object):
         for stamp, message in self.messages:
             if stamp > last_time:
                 #TODO: make this configurable!
-                parts = message.split(" ",3)
-                message = " ".join(parts[:3]) + (" :[%s] %s" % (stamp.strftime("%H:%M:%S"), parts[3][1:]))
+                prefix,code,args = parse_message(message)
+                if not prefix:
+                    prefix = make_prefix(self.cache.nick,self.host)
+                message = "%s %s %s :[%s] %s" % (prefix,code,args[0],stamp.strftime("%H:%M:%S"),args[1])
                 messages.append(message)
         return messages
 
