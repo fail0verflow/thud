@@ -128,8 +128,10 @@ class ChannelBuffer(MessageBuffer):
 
     def rejoin(self, client, last_seen):
         client.sendLine("%s JOIN %s" % (make_prefix(self.cache.nick,self.host),self.name))
+        #TODO: FETCH the topic if we don't have one
+        client.sendLine("%s 332 %s %s :%s" % (self.cache.serverprefix,self.cache.nick,self.name,self.topic))
+        client.sendLine("\n".join(self.mode))
         client.sendLine("\n".join(self.get_names()))
-        client.sendLine(self.topic)
         messages = self.get_messages_since(last_seen)
         client.sendLine(":thud!cache@th.ud NOTICE %s :Welcome back! You were last here at %s. Since then, there have been %d messages, replayed below:" % (self.name, last_seen, len(messages)))
         client.sendLine("\n".join(messages))
@@ -176,7 +178,7 @@ class ChannelBuffer(MessageBuffer):
             self.members[new] = tmp
     def set_topic(self, message, prefix, code, args):
         print "[-] SET_TOPIC(%s)" % message
-        self.topic = message
+        self.topic = args[2]
     def add_channel_mode(self, message, prefix, code, args):
         print "[-] ADD_CHANNEL_MODE(%s)" % message
         self.mode.append(message)
@@ -272,12 +274,9 @@ class Cache(object):
         if code == "USER":
             print "REGISTERING CLIENT: %s" % (message)
             print "RESOURCE (%s) LAST SEEN AT %s" % (client.resource, last_seen)
-            client.sendLine("\n".join(self.welcome))
-            client.sendLine("\n".join(self.motd))
-            client.sendLine("\n".join(self.mode))
-            client.sendLine("\n".join(self.queries))
-            #TODO: send privmsgs and register resource
-            print self.channels
+            if self.welcome: client.sendLine("\n".join(self.welcome))
+            if self.motd: client.sendLine("\n".join(self.motd))
+            if self.mode: client.sendLine("\n".join(self.mode))
             for channel in self.channels.values():
                 print "FORCING CLIENT JOIN TO CHANNEL %s" % channel.name
                 channel.rejoin(client,last_seen)
