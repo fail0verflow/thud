@@ -132,7 +132,7 @@ class User(object):
         server.register_callback(CALLBACK_MESSAGE, self.server_message)
         server.register_callback(CALLBACK_DISCONNECTED, self.server_disconnected)
         if not server.config.ref in self.server_caches:
-            self.server_caches[server.config.ref] = irc.Cache()
+            self.server_caches[server.config.ref] = irc.Cache(self)
 
             base = IRCLogger()
             base.read_config(self.config)

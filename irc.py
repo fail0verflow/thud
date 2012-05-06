@@ -80,7 +80,7 @@ class MessageBuffer(object):
                 #TODO: make this configurable!
                 prefix,code,args = parse_message(message)
                 if not prefix:
-                    prefix = make_prefix(self.cache.nick,self.host)
+                    prefix = make_prefix(self.cache.nick,self.cache.host)
                 message = "%s %s %s :[%s] %s" % (prefix,code,args[0],stamp.strftime("%H:%M:%S"),args[1])
                 messages.append(message)
         return messages
@@ -129,7 +129,7 @@ class ChannelBuffer(MessageBuffer):
         self.is_joined = True
 
     def rejoin(self, client, last_seen):
-        client.sendLine("%s JOIN %s" % (make_prefix(self.cache.nick,self.host),self.name))
+        client.sendLine("%s JOIN %s" % (make_prefix(self.cache.nick,self.cache.host),self.name))
         #TODO: FETCH the topic if we don't have one
         client.sendLine("%s 332 %s %s :%s" % (self.cache.serverprefix,self.cache.nick,self.name,self.topic))
         client.sendLine("\n".join(self.mode))
@@ -146,7 +146,6 @@ class ChannelBuffer(MessageBuffer):
         if nick_from_prefix(prefix) == self.cache.nick:
             print "[-] ACTUALLY JOINING %s" % self.name
             self.init_vars()
-            self.host = host_from_prefix(prefix)
         else:
             self.members[nick_from_prefix(prefix)] = None # just add the nick to the dictionary
             # TODO: send a WHO to the server for this user on this channel so that we can build a ChannelMember
@@ -207,7 +206,8 @@ class DummyLogger(object):
     def call(self, *args):
         pass
 class Cache(object):
-    def __init__(self):
+    def __init__(self, user):
+        self.user = user
         self.server = None
         self.welcome = []
         self.motd = []
@@ -215,6 +215,7 @@ class Cache(object):
         self.channels = {}
         self.queries = {}
         self.nick = None
+        self.host = None
         # dictionary keyed on client resource, which lists when each resource was last known to be alive.
         self.last_seen = defaultdict(lambda: datetime.fromordinal(1))
         self.shells = {} # key is resource
@@ -299,6 +300,12 @@ class Cache(object):
                     self.queries[nick] = QueryBuffer(nick,self.server.config)
                 print "QUERY SEND [%s] %s" % (nick,message)
                 self.queries[nick].add_message(message)
+            # make sure all other connected clients see this message
+            message_with_prefix = "%s %s" % (make_prefix(self.nick,self.host),message) 
+            for c in self.user.clients.values():
+                if c != client:
+                    c.sendLine(message_with_prefix)
+
             # update last_seen, but return false so that the message is sent to the server 
             self.update_last_seen(client)
             return False
@@ -360,7 +367,9 @@ class Cache(object):
         name = args[0]
         if name not in self.channels:
             self.channels[name] = ChannelBuffer(name,self,self.server.config.channel_configs.get(name,self.server.config))
+        self.host = host_from_prefix(prefix)
         self.channels[name].add_join(message,prefix,code,args)
+
     def handle_server_PART(self, source, message, prefix, code, args):
         name = args[0]
         self.channels[name].add_part(message,prefix,code,args)
@@ -396,7 +405,6 @@ class Cache(object):
         new = args[0]
         if old == self.nick:
             self.nick = new
-            self.prefix = make_prefix(new,host_from_prefix(prefix))
         for channel in self.channels.values():
             channel.update_nick(old,new)
 
