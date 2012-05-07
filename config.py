@@ -8,7 +8,6 @@ class Config(object):
         self._filename = filename
         if self._filename:
             self.readfile()
-        print self._data
         self._children = []
         self._parse()
 
@@ -85,6 +84,10 @@ class Config(object):
             return self._parent.get_with_fallback(key,default)
         return default
 
+    def get(self, key, default=None):
+        if key in self._data:
+            return self._data[key]
+        return default
     def __repr__(self):
         res = ""
         for k,v in self._data.items():
@@ -100,21 +103,6 @@ class Config(object):
 
 
 
-
-
-x = Config(filename="c1.user")
-print "-----"
-
-y = x.by_path("networks/ref=f0f/channels/name=#f0f1")
-#print y
-#print y.get_root()
-x.staatat = 1
-print x.staatat
-print y.staatat
-
-print
-print
-print x.networks
 
 
 # vim: tabstop=4 expandtab shiftwidth=4 softtabstop=4

@@ -366,7 +366,10 @@ class Cache(object):
         print "SERVER JOIN: %s" % message
         name = args[0]
         if name not in self.channels:
-            self.channels[name] = ChannelBuffer(name,self,self.server.config.channel_configs.get(name,self.server.config))
+            config = self.server.config.by_path("channels/name=%s" % name)
+            if not config:
+                config = self.server.config
+            self.channels[name] = ChannelBuffer(name,self,config)
         self.host = host_from_prefix(prefix)
         self.channels[name].add_join(message,prefix,code,args)
 
