@@ -314,6 +314,10 @@ class IRCClientConnection(CallBackLineReceiver):
     def connectionMade(self):
         print "CLIENT CONNECTED"
         self.register_callback(CALLBACK_MESSAGE,self.lineReceived_filter_callback)
+    def sendLine(self,line):
+        #print "CLIENT SENDLINE: %s" % line
+        if len(line.strip()):
+            CallBackLineReceiver.sendLine(self,line)
     def lineReceived_filter_callback(self,dummy,line):
         if line.startswith("PASS"):
             token = line[5:]

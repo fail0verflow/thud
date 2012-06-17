@@ -14,7 +14,7 @@ def parse_message(message):
             code,args = (message,"")
             
     if ":" in args:
-        args,d,last_arg = args.partition(":")
+        args,d,last_arg = args.partition(" :")
         args = args.split() + [last_arg]
     else:
         args = args.split(" ")
@@ -119,6 +119,7 @@ class ChannelBuffer(MessageBuffer):
         self.cache = cache
         self.name = name
         self.init_vars()
+        self.has_who = False
 
     def init_vars(self):
         self.members = {}
@@ -190,6 +191,7 @@ class ChannelBuffer(MessageBuffer):
         print "[-] ADD_WHO(%s)" % message
         if code == "RPL_WHOREPLY":
             self.members[args[5]] = ChannelMember(args[2:])
+        self.has_who = True
     def get_who(self):
         messages = []
         for name,member in self.members.items():
@@ -272,6 +274,7 @@ class Cache(object):
 
     def handle_client_message(self,client, message):
         """ Called with each message from the client. The message should be parsed and if the cache can handle the message it should send any responses necessary and return true. If the cache can't handle the message, return false."""
+        handled = False
         prefix, code, args = parse_message(message)
         last_seen = self.last_seen[client.resource]
         if code == "USER":
@@ -279,16 +282,17 @@ class Cache(object):
             print "RESOURCE (%s) LAST SEEN AT %s" % (client.resource, last_seen)
             if self.welcome: client.sendLine("\n".join(self.welcome))
             if self.motd: client.sendLine("\n".join(self.motd))
-            if self.mode: client.sendLine("\n".join(self.mode))
+            if self.mode: client.sendLine(self.mode)
             for channel in self.channels.values():
                 print "FORCING CLIENT JOIN TO CHANNEL %s" % channel.name
                 channel.rejoin(client,last_seen)
             for query in self.queries.values():
                 print "FORCING CLIENT JOIN TO QUERY %s" % query.nick
                 query.rejoin(client,last_seen)
+            handled = True
         elif code in ["QUIT"]:
             # just update last_seen
-            pass
+            handled = True
         elif code in ["PRIVMSG","NOTICE"]:
             timestamp = time.time()
             now = datetime.fromtimestamp(timestamp)
@@ -307,32 +311,40 @@ class Cache(object):
                     c.sendLine(message_with_prefix)
 
             # update last_seen, but return false so that the message is sent to the server 
-            self.update_last_seen(client)
-            return False
         elif code == "PONG":
-            self.update_last_seen(client)
-            return False
+            pass
         elif code == "NICK":
             #self.nick = args[0]
-            return False
+            pass
         elif code == "THUD":
             if not client.resource in self.shells:
                 self.shells[client.resource] = ThudShell(self,client)
             self.shells[client.resource].handle(args)
-        elif code == "JOIN" and args[0] in self.channels:
-            print "GOT JOIN MESSAGE FOR %s" % args[0]
-            channel = self.channels[args[0]]
-            if not channel.is_joined:
-                channel.rejoin(client,last_seen)
+            handled = True
+        elif code == "JOIN":
+            chans = args[0].split(",")
+            print "GOT JOIN MESSAGE FOR %s" % chans
+            handled = True
+            for chan in chans:
+                if not chan in self.channels:
+                    print "CACHE INGORING CLIENT JOIN TO UNJOINED CHANNEL: %s " % chan
+                    handled = False
+                    continue
+                channel = self.channels[chan]
+                if not channel.is_joined:
+                    channel.rejoin(client,last_seen)
         elif code == "MODE" and args[0] in self.channels and len(self.channels[args[0]].mode):
             client.sendLine("\n".join(self.channels[args[0]].mode))
+            handled = True
         elif code == "WHO" and args[0] in self.channels:
-            client.sendLine("\n".join(self.channels[args[0]].get_who()))
+            channel = self.channels[args[0]]
+            if channel.has_who:
+                client.sendLine("\n".join(channel.get_who()))
+                handled = True
         else:
             print "CACHE IGNORING CLIENT MESSAGE %s:%s" % (code,args)
-            return False
         self.update_last_seen(client)
-        return True
+        return handled
 
     # WELCOME
     def handle_server_RPL_WELCOME(self, source, message, prefix, code, args):
