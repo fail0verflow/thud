@@ -14,6 +14,7 @@ def parse_message(message):
             code,args = (message,"")
             
     if ":" in args:
+        if args[0] == ":": args = " " + args
         args,d,last_arg = args.partition(" :")
         args = args.split() + [last_arg]
     else:
@@ -158,7 +159,7 @@ class ChannelBuffer(MessageBuffer):
         else:
             del self.members[nick_from_prefix(prefix)]
     def add_names(self, message, prefix, code, args):
-        print "[-] ADD_NAMES(%s)" % message
+        #print "[-] ADD_NAMES(%s)" % message
         if code == "RPL_NAMREPLY":
             for name in args[3].split(" "):
                 if name.startswith("@") or name.startswith("+"): name = name[1:]
@@ -186,9 +187,13 @@ class ChannelBuffer(MessageBuffer):
         self.mode.append(message)
     def add_mode(self, message, prefix, code, args):
         print "[-] ADD_MODE(%s)" % message
+        print args
+        if len(args) < 3:  
+            self.add_channel_mode(message,prefix,code,args)
+            return
         self.members[args[2]].update_modes(args[1])
     def add_who(self, message, prefix, code, args):
-        print "[-] ADD_WHO(%s)" % message
+        #print "[-] ADD_WHO(%s)" % message
         if code == "RPL_WHOREPLY":
             self.members[args[5]] = ChannelMember(args[2:])
         self.has_who = True
@@ -265,7 +270,7 @@ class Cache(object):
 
     def process_server_message(self,server,message):
         """ Called with each message from the server server. The message should be parsed, analyzed and possibly added to the cache's data-stores."""
-        print "CACHE RECEIVED: %s" % message
+        #print "CACHE RECEIVED: %s" % message
         self.dispatch_server_message(server,message)
 
     def update_last_seen(self,client):
@@ -277,6 +282,7 @@ class Cache(object):
         handled = False
         prefix, code, args = parse_message(message)
         last_seen = self.last_seen[client.resource]
+        update_last_seen = True
         if code == "USER":
             print "REGISTERING CLIENT: %s" % (message)
             print "RESOURCE (%s) LAST SEEN AT %s" % (client.resource, last_seen)
@@ -315,7 +321,7 @@ class Cache(object):
             pass
         elif code == "NICK":
             #self.nick = args[0]
-            pass
+            update_last_seen = False
         elif code == "THUD":
             if not client.resource in self.shells:
                 self.shells[client.resource] = ThudShell(self,client)
@@ -343,7 +349,8 @@ class Cache(object):
                 handled = True
         else:
             print "CACHE IGNORING CLIENT MESSAGE %s:%s" % (code,args)
-        self.update_last_seen(client)
+        if update_last_seen: 
+            self.update_last_seen(client)
         return handled
 
     # WELCOME

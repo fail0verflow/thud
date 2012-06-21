@@ -54,10 +54,11 @@ class User(object):
         self.server_send(server,"NICK %s" % server.config.nick)
         self.server_send(server,"USER %s 0 * :%s" % (server.config.nick, server.config.realname))
         # we should join all channels:
-        for channel in server.config.channels:
-            self.server_send(server,"JOIN %s %s" % (channel.name, channel.key))
-            self.server_send(server,"MODE %s" % channel.name)
-            self.server_send(server,"WHO %s" % channel.name)
+        if server.config.channels:
+            for channel in server.config.channels:
+                self.server_send(server,"JOIN %s %s" % (channel.name, channel.key))
+                self.server_send(server,"MODE %s" % channel.name)
+                self.server_send(server,"WHO %s" % channel.name)
 
         return server
     def server_send(self, server, line):
