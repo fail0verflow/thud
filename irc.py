@@ -100,12 +100,22 @@ class MessageBuffer(object):
 
 
 class ChannelMember(object):
-    def __init__(self, whoargs):
-        self.user, self.host, self.server, self.nick, modestring = whoargs[:5]
-        self.hops, dummy, self.realname = whoargs[5].partition(" ")
-        self.away = modestring[0] == "G"
-        self.ircoper = len(modestring) > 1 and modestring[1] == "*"
-        self.mode = self.ircoper and modestring[2:] or modestring[1:]
+    def __init__(self, nick=None, prefix=None, whoargs=None):
+        if not (prefix or nick or whoargs):
+            raise ValueError("A ChannelMember cannot be constructed without one of nick, prefix or whoargs")
+        if prefix:
+            self.nick = nick_from_prefix(prefix)
+            self.host = nick_from_prefix(prefix)
+        if nick:
+            self.nick = nick
+        if whoargs:
+            self.user, self.host, self.server, self.nick, modestring = whoargs[:5]
+            self.hops, dummy, self.realname = whoargs[5].partition(" ")
+            self.away = modestring[0] == "G"
+            self.ircoper = len(modestring) > 1 and modestring[1] == "*"
+            self.mode = self.ircoper and modestring[2:] or modestring[1:]
+        else:
+            self.user, self.server, self.hops, self.realname, self.away, self.ircoper, self.mode = ("", "", "", "", False, False, "")
 
     def get_modestring(self):
         modestring = self.away and "G" or "H"
@@ -157,30 +167,31 @@ class ChannelBuffer(MessageBuffer):
         print "[-] PART %s" % self.name
         self.is_joined = False
 
-    def add_join(self, message, prefix, code, args):
+    def add_join(self, source, message, prefix, code, args):
         print "[-] ADD_JOIN(%s)" % message
         if nick_from_prefix(prefix) == self.cache.nick:
             print "[-] ACTUALLY JOINING %s" % self.name
             self.init_vars()
         else:
-            self.members[nick_from_prefix(prefix)] = None  # just add the nick to the dictionary
-            # TODO: send a WHO to the server for this user on this channel so that we can build a ChannelMember
+            self.members[nick_from_prefix(prefix)] = ChannelMember(prefix=prefix)  # just add the nick to the dictionary
+            print "SENDING WHO for %s" % nick_from_prefix(prefix)
+            source.sendLine(":thud!cache@th.ud WHO %s" % nick_from_prefix(prefix))
 
-    def add_part(self, message, prefix, code, args):
+    def add_part(self, source, message, prefix, code, args):
         print "[-] ADD_PART(%s)" % message
         if nick_from_prefix(prefix) == self.cache.nick:
             self.is_joined = False
         else:
             del self.members[nick_from_prefix(prefix)]
 
-    def add_names(self, message, prefix, code, args):
+    def add_names(self, source, message, prefix, code, args):
         #print "[-] ADD_NAMES(%s)" % message
         if code == "RPL_NAMREPLY":
             for name in args[3].split(" "):
                 if name.startswith("@") or name.startswith("+"):
                     name = name[1:]
                 if not name in self.members:
-                    self.members[name] = None
+                    self.members[name] = ChannelMember(nick=name)
 
     def get_names(self):
         messages = []
@@ -198,29 +209,31 @@ class ChannelBuffer(MessageBuffer):
             self.members[new] = tmp
             del self.members[old]
 
-    def set_topic(self, message, prefix, code, args):
+    def set_topic(self, source, message, prefix, code, args):
         print "[-] SET_TOPIC(%s)" % message
         self.topic = args[2]
 
-    def add_channel_mode(self, message, prefix, code, args):
+    def add_channel_mode(self, source, message, prefix, code, args):
         print "[-] ADD_CHANNEL_MODE(%s)" % message
         self.mode.append(message)
 
-    def add_mode(self, message, prefix, code, args):
+    def add_mode(self, source, message, prefix, code, args):
         print "[-] ADD_MODE(%s)" % message
         print args
         if len(args) < 3:
-            self.add_channel_mode(message, prefix, code, args)
+            self.add_channel_mode(source, message, prefix, code, args)
             return
         if not args[2] in self.members:
             print "\n" * 5 + "channel member not found: " + args + "\n" * 5
             return
+        if not self.members[args[2]]:
+            print self.members
         self.members[args[2]].update_modes(args[1])
 
-    def add_who(self, message, prefix, code, args):
-        #print "[-] ADD_WHO(%s)" % message
+    def add_who(self, source, message, prefix, code, args):
+        # print "[-] ADD_WHO(%s)" % message
         if code == "RPL_WHOREPLY":
-            self.members[args[5]] = ChannelMember(args[2:])
+            self.members[args[5]] = ChannelMember(whoargs=args[2:])
         self.has_who = True
 
     def get_who(self):
@@ -428,7 +441,7 @@ class Cache(object):
         if args[0] == self.nick:
             self.mode = message
         else:
-            self.channels[args[0]].add_mode(message, prefix, code, args)
+            self.channels[args[0]].add_mode(source, message, prefix, code, args)
 
     # CHANNEL JOIN
     def handle_server_JOIN(self, source, message, prefix, code, args):
@@ -440,18 +453,18 @@ class Cache(object):
                 config = self.server.config
             self.channels[name] = ChannelBuffer(name, self, config)
         self.host = host_from_prefix(prefix)
-        self.channels[name].add_join(message, prefix, code, args)
+        self.channels[name].add_join(source, message, prefix, code, args)
 
     def handle_server_PART(self, source, message, prefix, code, args):
         name = args[0]
-        self.channels[name].add_part(message, prefix, code, args)
+        self.channels[name].add_part(source, message, prefix, code, args)
 
     def handle_server_RPL_NAMREPLY(self, source, message, prefix, code, args):
         name = args[1] in ["=", "*", "@"] and args[2] or args[1]
-        self.channels[name].add_names(message, prefix, code, args)
+        self.channels[name].add_names(source, message, prefix, code, args)
 
     def handle_server_RPL_ENDOFNAMES(self, source, message, prefix, code, args):
-        self.channels[args[1]].add_names(message, prefix, code, args)
+        self.channels[args[1]].add_names(source, message, prefix, code, args)
 
     def handle_server_TOPIC(self, source, message, prefix, code, args):
         self.channels[args[0]].set_topic(message, prefix, code, args)
@@ -459,14 +472,16 @@ class Cache(object):
     # CHANNEL MODE
     def handle_server_RPL_CHANNELMODEIS(self, source, message, prefix, code, args):
         print "CACHEING CHANNEL MODE: %s" % message
-        self.channels[args[1]].add_channel_mode(message, prefix, code, args)
+        self.channels[args[1]].add_channel_mode(source, message, prefix, code, args)
 
     def handle_server_RPL_CREATIONTIME(self, source, message, prefix, code, args):
-        self.channels[args[1]].add_channel_mode(message, prefix, code, args)
+        self.channels[args[1]].add_channel_mode(source, message, prefix, code, args)
 
     # CHANNEL WHO
     def handle_server_RPL_WHOREPLY(self, source, message, prefix, code, args):
-        self.channels[args[1]].add_who(message, prefix, code, args)
+        if code == 'RPL_ENDOFWHO' and args[1] not in self.channels:
+            return  # this looks like an ENDOFWHO for a nick-targeted WHO request
+        self.channels[args[1]].add_who(source, message, prefix, code, args)
     handle_server_RPL_ENDOFWHO = handle_server_RPL_WHOREPLY
 
     # PING
