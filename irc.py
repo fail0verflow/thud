@@ -226,8 +226,6 @@ class ChannelBuffer(MessageBuffer):
         if not args[2] in self.members:
             print "\n" * 5 + "channel member not found: " + args + "\n" * 5
             return
-        if not self.members[args[2]]:
-            print self.members
         self.members[args[2]].update_modes(args[1])
 
     def add_who(self, source, message, prefix, code, args):
@@ -481,7 +479,13 @@ class Cache(object):
     def handle_server_RPL_WHOREPLY(self, source, message, prefix, code, args):
         if code == 'RPL_ENDOFWHO' and args[1] not in self.channels:
             return  # this looks like an ENDOFWHO for a nick-targeted WHO request
-        self.channels[args[1]].add_who(source, message, prefix, code, args)
+        if args[1] == "*":
+            for channel in self.channels:
+                if args[5] in channel.members:
+                    channel.add_who(source, message, prefix, code, args)
+        else:
+            self.channels[args[1]].add_who(source, message, prefix, code, args)
+
     handle_server_RPL_ENDOFWHO = handle_server_RPL_WHOREPLY
 
     # PING
